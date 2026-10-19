@@ -1,0 +1,10 @@
+{
+  "name": "fledgy",
+  "version": "0.1.0",
+  "description": "Understand the app your agent built, without reading its code. Fledgy keeps a plain-words map of every user flow, the parts of the system each step runs through, and a manual QA script for each path, checked against the code after every change.",
+  "author": {
+    "name": "Alexandre de Moura"
+  },
+  "repository": "https://github.com/AlexandreDeMoura/fledgy",
+  "license": "MIT"
+}

@@ -1,0 +1,96 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { Language, type Node, Parser } from "web-tree-sitter";
+
+const GRAMMAR_BY_EXTENSION: Record<string, string> = {
+  ".ts": "tree-sitter-typescript.wasm",
+  ".mts": "tree-sitter-typescript.wasm",
+  ".cts": "tree-sitter-typescript.wasm",
+  ".tsx": "tree-sitter-tsx.wasm",
+  ".js": "tree-sitter-tsx.wasm",
+  ".jsx": "tree-sitter-tsx.wasm",
+  ".mjs": "tree-sitter-tsx.wasm",
+  ".cjs": "tree-sitter-tsx.wasm",
+  ".py": "tree-sitter-python.wasm",
+};
+
+// Nodes that define a name, read from their `name` field. Overload signatures
+// (`function_signature`, `method_signature`) are left out so that an
+// overloaded function counts once, at its implementation.
+const DEFINITIONS = new Set([
+  "function_declaration",
+  "generator_function_declaration",
+  "class_declaration",
+  "abstract_class_declaration",
+  "interface_declaration",
+  "type_alias_declaration",
+  "enum_declaration",
+  "variable_declarator",
+  "method_definition",
+  "public_field_definition",
+  "abstract_method_signature",
+  "function_definition",
+  "class_definition",
+]);
+
+// Nodes that only wrap a definition.
+const WRAPPERS = new Set([
+  "export_statement",
+  "lexical_declaration",
+  "variable_declaration",
+  "decorated_definition",
+  "expression_statement",
+]);
+
+const parsers = new Map<string, Promise<Parser>>();
+
+function parserFor(file: string): Promise<Parser> {
+  const grammar = GRAMMAR_BY_EXTENSION[path.extname(file)];
+  if (!grammar) throw new Error(`Cannot look for a symbol in ${file}: no grammar for this kind of file`);
+  let parser = parsers.get(grammar);
+  if (!parser) {
+    parser = (async () => {
+      await Parser.init();
+      const loaded = new Parser();
+      loaded.setLanguage(await Language.load(fileURLToPath(new URL(`../grammars/${grammar}`, import.meta.url))));
+      return loaded;
+    })();
+    parsers.set(grammar, parser);
+  }
+  return parser;
+}
+
+function nameDefinedBy(node: Node): string | undefined {
+  if (DEFINITIONS.has(node.type)) return node.childForFieldName("name")?.text;
+  // Python: `NAME = value` and `NAME: type = value`.
+  if (node.type === "assignment") {
+    const left = node.childForFieldName("left");
+    return left?.type === "identifier" ? left.text : undefined;
+  }
+  return undefined;
+}
+
+// The definitions made directly in a scope: a file's top level or a class body.
+function definitionsIn(scope: Node): { name: string; node: Node }[] {
+  return scope.namedChildren.flatMap((child) => {
+    if (!child) return [];
+    if (WRAPPERS.has(child.type)) return definitionsIn(child);
+    const name = nameDefinedBy(child);
+    return name ? [{ name, node: child }] : [];
+  });
+}
+
+// How many times `symbol` is defined in `file`. `Name` is looked for at the
+// file's top level; `Class.member` inside the body of the top-level `Class`.
+export async function countDefinitions(file: string, symbol: string): Promise<number> {
+  const tree = (await parserFor(file)).parse(fs.readFileSync(file, "utf8"));
+  if (!tree) throw new Error(`Could not parse ${file}`);
+  let scopes: Node[] = [tree.rootNode];
+  let found: Node[] = [];
+  for (const name of symbol.split(".")) {
+    found = scopes.flatMap(definitionsIn).filter((definition) => definition.name === name).map(({ node }) => node);
+    scopes = found.flatMap((node) => node.childForFieldName("body") ?? []);
+  }
+  return found.length;
+}

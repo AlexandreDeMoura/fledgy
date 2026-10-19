@@ -1,0 +1,58 @@
+{
+  "name": "fledgy",
+  "version": "0.1.0",
+  "description": "Understand the app your agent built, without reading its code. Fledgy keeps a plain-words map of every user flow, the parts of the system each step runs through, and a manual QA script for each path, checked against the code after every change.",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "claude-code-skills",
+    "agent-skills",
+    "ai-agents",
+    "knowledge-base",
+    "living-documentation",
+    "documentation",
+    "manual-qa",
+    "codebase-map",
+    "codebase-atlas",
+    "vibe-coding",
+    "pragmatic-programmer"
+  ],
+  "license": "MIT",
+  "author": "Alexandre de Moura",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlexandreDeMoura/fledgy"
+  },
+  "type": "module",
+  "bin": {
+    "fledgy": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "grammars",
+    "view",
+    "skills",
+    ".claude-plugin"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "grammars": "node scripts/copy-grammars.mjs",
+    "build": "npm run grammars && tsc -p tsconfig.build.json",
+    "pretest": "npm run build",
+    "test": "vitest run --dir src",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "web-tree-sitter": "0.27.0",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "tree-sitter-python": "0.25.0",
+    "tree-sitter-typescript": "0.23.2",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
+  }
+}
