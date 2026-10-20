@@ -37,7 +37,7 @@ const WORDS = {
   trigger: ['Trigger', 'What starts the Flow.'],
   system: ['System', 'What the app does in this step, out of sight of the person using it.'],
   part: ['Part', 'A named piece of your app, one thing it can do, described in one sentence. Parts are what point to the code.'],
-  entity: ['Entity', 'A Part the app stores and keeps between visits, like a thread or an agent.'],
+  entity: ['Entity', 'A Part the app stores and keeps between visits, like a thread, an agent or a light/dark theme setting.'],
   anchor: ['Anchor', 'A pointer from a Part to the place in the code that makes it, on the screen side or the backend side. A click opens it in VS Code.'],
   qachip: ['QA results', 'How many steps of the Flow’s tests by hand (its Manual QA Checks) you recorded as passed.'],
   qa: ['Manual QA Check', 'Steps to test the Flow by hand, ticked in the web view. The main path and each Variant have one.'],
