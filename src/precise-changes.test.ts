@@ -123,6 +123,31 @@ test("a renamed file compares its old content and a deleted file changes the Flo
   expect((await data()).changes.recent[0].flows).toEqual([flow]);
 });
 
+test("a symlink that becomes a file does not move its changes onto the next file", async () => {
+  const root = app();
+  fs.symlinkSync("code.ts", path.join(root, "a-link.ts"));
+  commitAll(root, "add a link");
+  const { data } = await api(root);
+  fs.rmSync(path.join(root, "a-link.ts"));
+  write(root, "a-link.ts", "export const linked = 1;\n");
+  write(root, "code.ts", code(1, 2));
+  expect((await data()).changes.uncommitted).toMatchObject({ flows: [], near: [flow] });
+  commitAll(root, "link becomes a file, other changes");
+  expect((await data()).changes.recent[0]).toMatchObject({ flows: [], near: [flow], files: [{ path: "code.ts", unanchored: ["other"] }] });
+});
+
+test("an anchored file that becomes a symlink changes the Flow at file level", async () => {
+  const root = app("link.ts#anchored");
+  write(root, "target.ts", code(1, 1));
+  commitAll(root, "add a target");
+  const { data } = await api(root);
+  fs.rmSync(path.join(root, "link.ts"));
+  fs.symlinkSync("target.ts", path.join(root, "link.ts"));
+  expect((await data()).changes.uncommitted).toMatchObject({ flows: [flow], files: [{ path: "link.ts", fileLevel: true }] });
+  commitAll(root, "file becomes a link");
+  expect((await data()).changes.recent[0]).toMatchObject({ flows: [flow], files: [{ path: "link.ts", fileLevel: true }] });
+});
+
 test("untracked anchored files count but Knowledge base edits never do", async () => {
   const root = app();
   const { data } = await api(root);
@@ -149,6 +174,40 @@ test("merges are one first-parent column with the whole branch's changes", async
   const recent = (await data()).changes.recent;
   expect(recent[0]).toMatchObject({ subject: "merge feature", flows: [flow], files: [{ symbols: [{ name: "anchored" }] }] });
   expect(recent.map((c: { sha: string }) => c.sha)).not.toContain(side);
+});
+
+test("a result recorded on a merged branch counts that branch's later commits and the trunk's, not the merge", async () => {
+  const root = app();
+  const trunk = git(root, "branch", "--show-current");
+  git(root, "checkout", "--quiet", "-b", "feature");
+  write(root, "code.ts", code(2, 1));
+  commitAll(root, "tested on feature");
+  const { data, record } = await api(root);
+  await record();
+  write(root, "code.ts", code(3, 1));
+  const later = commitAll(root, "after the test on feature");
+  git(root, "checkout", "--quiet", trunk);
+  write(root, "code.ts", code(1, 2));
+  const onTrunk = commitAll(root, "near on trunk");
+  git(root, "merge", "--no-ff", "--quiet", "feature", "-m", "merge feature");
+  const since = (await data()).results[flow].main.approve.since;
+  expect(since.commits.map((c: { sha: string }) => c.sha)).toEqual([later]);
+  expect(since.nearCommits.map((c: { sha: string }) => c.sha)).toEqual([onTrunk]);
+  expect(since.byDate).toBe(false);
+});
+
+test("a result recorded on a merged branch with no later work has no commits since", async () => {
+  const root = app();
+  const trunk = git(root, "branch", "--show-current");
+  git(root, "checkout", "--quiet", "-b", "feature");
+  write(root, "code.ts", code(2, 1));
+  commitAll(root, "tested on feature");
+  const { data, record } = await api(root);
+  await record();
+  git(root, "checkout", "--quiet", trunk);
+  git(root, "merge", "--no-ff", "--quiet", "feature", "-m", "merge feature");
+  const since = (await data()).results[flow].main.approve.since;
+  expect(since).toMatchObject({ commits: [], nearCommits: [], byDate: false });
 });
 
 test("QA Results separate near commits and near uncommitted work, with the mtime gate", async () => {
@@ -284,7 +343,7 @@ test("a warm request reuses cached commit facts without starting cat-file", asyn
   const { data } = await api(root);
   const cold = await data();
   expect(fs.readFileSync(trace, "utf8")).toContain("cat-file --batch");
-  const cache = path.join(home, ".fledgy", git(root, "rev-list", "--max-parents=0", "HEAD"), "changes-v1");
+  const cache = path.join(home, ".fledgy", git(root, "rev-list", "--max-parents=0", "HEAD"), "changes-v2");
   expect(fs.readdirSync(cache).length).toBeGreaterThan(0);
   fs.writeFileSync(trace, "");
   const warm = await data();

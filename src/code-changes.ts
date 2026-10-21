@@ -17,7 +17,9 @@ export type FileChange = {
 };
 export type Changes = { flows: string[]; near: string[]; files: FileChange[] };
 type Lines = { start: number; count: number }[];
-type DiffFile = { path: string; oldPath: string; before: string; after: string; oldLines: Lines; newLines: Lines; binary: boolean };
+// `comparable` is false for a binary file, a file that became or stopped being
+// a symlink, and any file whose patch could not be matched to it with certainty.
+type DiffFile = { path: string; oldPath: string; before: string; after: string; oldLines: Lines; newLines: Lines; comparable: boolean };
 export type CommitDiff = Commit & { files: DiffFile[] };
 type FileFacts = { before: string[]; after: string[]; outsideDefinitions: boolean; comparable: boolean; deleted: boolean };
 
@@ -30,25 +32,34 @@ const diffArgs = ["--raw", "-z", "--no-abbrev", "--patch", "-U0", "-M", "--no-ex
 function diffFiles(text: string): DiffFile[] {
   const end = text.indexOf("\0\0diff --git ");
   const raw = (end < 0 ? text : text.slice(0, end)).replace(/^\s*\0?\s*/, "").split("\0");
-  const files: DiffFile[] = [];
+  const files: (DiffFile & { patches: number })[] = [];
   for (let n = 0; n < raw.length; n++) {
     const match = /^:\d+ \d+ ([a-f0-9]+) ([a-f0-9]+) ([A-Z])\d*$/.exec(raw[n]!);
     if (!match) continue;
     const oldPath = raw[++n]!;
     const file = match[3] === "R" || match[3] === "C" ? raw[++n]! : oldPath;
-    files.push({ path: file, oldPath, before: match[1]!, after: match[2]!, oldLines: [], newLines: [], binary: false });
+    // A type change, such as a symlink that becomes a file, is written as two
+    // patches: the old file deleted, then the new one added.
+    const typeChanged = match[3] === "T";
+    files.push({ path: file, oldPath, before: match[1]!, after: match[2]!, oldLines: [], newLines: [], comparable: !typeChanged, patches: typeChanged ? 2 : 1 });
   }
   const patches = end < 0 ? [] : text.slice(end + 2).split(/^diff --git /m).slice(1);
-  for (const [index, patch] of patches.entries()) {
-    const file = files[index];
-    if (!file) continue;
-    file.binary = /^Binary files /m.test(patch) || /^GIT binary patch/m.test(patch);
-    for (const match of patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
-      file.oldLines.push({ start: Number(match[1]), count: Number(match[2] ?? 1) });
-      file.newLines.push({ start: Number(match[3]), count: Number(match[4] ?? 1) });
+  // Patches come in the order of the raw entries. If their count does not add
+  // up, no patch can be trusted to belong to its file: all fall to file level.
+  const trusted = patches.length === files.reduce((sum, file) => sum + file.patches, 0);
+  let next = 0;
+  for (const file of files) {
+    const own = patches.slice(next, next += file.patches);
+    if (!trusted) file.comparable = false;
+    for (const patch of trusted ? own : []) {
+      if (/^Binary files /m.test(patch) || /^GIT binary patch/m.test(patch)) file.comparable = false;
+      for (const match of patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
+        file.oldLines.push({ start: Number(match[1]), count: Number(match[2] ?? 1) });
+        file.newLines.push({ start: Number(match[3]), count: Number(match[4] ?? 1) });
+      }
     }
   }
-  return files;
+  return files.map(({ patches: _, ...file }) => file);
 }
 
 // Sparse retains columns with no candidate-path changes. Full diff preserves
@@ -93,7 +104,7 @@ async function compare(file: DiffFile, before: Buffer | undefined, after: Buffer
   const deleted = after === undefined;
   const oldDefinitions = before === undefined ? [] : await definitionRanges(file.oldPath, before.toString("utf8"));
   const newDefinitions = after === undefined ? [] : await definitionRanges(file.path, after.toString("utf8"));
-  if (file.binary || !oldDefinitions || !newDefinitions) return { before: [], after: [], outsideDefinitions: false, comparable: false, deleted };
+  if (!file.comparable || !oldDefinitions || !newDefinitions) return { before: [], after: [], outsideDefinitions: false, comparable: false, deleted };
   return {
     before: oldDefinitions.filter(def => hits(def, file.oldLines) || !newDefinitions.some(other => other.name === def.name)).map(def => def.name),
     after: newDefinitions.filter(def => hits(def, file.newLines) || !oldDefinitions.some(other => other.name === def.name)).map(def => def.name),
@@ -106,8 +117,8 @@ async function compare(file: DiffFile, before: Buffer | undefined, after: Buffer
 // versioned; a damaged or unwritable cache costs work, never correctness.
 const memory = new Map<string, FileFacts>();
 async function facts(root: string, commit: string, file: DiffFile, objects: GitObjects, cache?: string): Promise<FileFacts> {
-  const key = createHash("sha256").update(`v1\0${commit}\0${file.path}`).digest("hex");
-  const location = cache && path.join(cache, "changes-v1", `${key}.json`);
+  const key = createHash("sha256").update(`v2\0${commit}\0${file.path}`).digest("hex");
+  const location = cache && path.join(cache, "changes-v2", `${key}.json`);
   if (location && memory.has(location)) return memory.get(location)!;
   if (location) try {
     const value = JSON.parse(fs.readFileSync(location, "utf8")) as FileFacts;
@@ -183,7 +194,7 @@ export async function workingChanges(root: string, anchors: FlowAnchors, objects
   if (!dirty.length) return { flows: [], near: [], files: [] };
   const tracked = dirty.some(entry => !entry.startsWith("?? ")) ? diffFiles(readGit(root, "diff", ...diffArgs, "HEAD", "--")) : [];
   const untracked = dirty.filter(entry => entry.startsWith("?? ")).map(entry => entry.slice(3));
-  for (const file of untracked) tracked.push({ path: file, oldPath: file, before: "0", after: "0", oldLines: [], newLines: [], binary: false });
+  for (const file of untracked) tracked.push({ path: file, oldPath: file, before: "0", after: "0", oldLines: [], newLines: [], comparable: true });
   const files = await Promise.all(tracked.filter(file => candidates.has(file.path)).map(async file => {
     let after: Buffer | undefined;
     try { after = fs.readFileSync(path.join(root, file.path)); } catch { /* deleted */ }

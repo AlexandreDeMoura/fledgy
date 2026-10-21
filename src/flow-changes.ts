@@ -25,7 +25,7 @@ export type ChangedSince = {
   byDate: boolean;
 };
 
-const appHistories = new Map<string, { head: string; directory: string; commits: Set<string> }>();
+const appHistories = new Map<string, { head: string; directory: string; commits: Set<string>; firstParents: Set<string> }>();
 const ancestors = new Map<string, Set<string>>();
 
 function appHistory(root: string, home: string) {
@@ -35,8 +35,9 @@ function appHistory(root: string, home: string) {
     const previous = appHistories.get(key);
     if (previous?.head === head) return previous;
     const commits = new Set(readGit(root, "rev-list", "HEAD").trim().split("\n"));
+    const firstParents = new Set(readGit(root, "rev-list", "--first-parent", "HEAD").trim().split("\n"));
     const directory = appDataDirectory(root, home)!;
-    const history = { head, directory, commits };
+    const history = { head, directory, commits, firstParents };
     appHistories.set(key, history);
     return history;
   } catch {
@@ -102,6 +103,24 @@ export async function changeReader(repoRoot: string, home: string) {
       return answer;
     };
 
+    // The commits since `from`, an ancestor of `tip`, along first parents. A
+    // merge that brought `from` in through another parent would carry the
+    // tested work in its diff, so it is replaced by its branch's own commits
+    // after `from`. A conflict resolved in that merge is not seen (a known limit).
+    const sinceCommits = async (from: string, tip: string): Promise<RecentCommit[]> => {
+      const chain = await range([`${from}..${tip}`]);
+      if (tip === "HEAD" && app?.firstParents.has(from)) return chain;
+      const after = new Set(readGit(repoRoot, "rev-list", "--ancestry-path", `${from}..${tip}`).trim().split("\n"));
+      const merge = chain.filter(commit => after.has(commit.sha)).at(-1);
+      if (!merge) return chain;
+      const [first, ...others] = readGit(repoRoot, "rev-parse", `${merge.sha}^@`).trim().split("\n");
+      const branch = others.find(parent => parent === from || after.has(parent));
+      if (first === from || !branch) return chain;
+      return [...chain.filter(commit => commit !== merge), ...await sinceCommits(from, branch)]
+        .sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    };
+    const sinceRanges = new Map<string, Promise<RecentCommit[]>>();
+
     const uncommitted = objects ? await workingChanges(repoRoot, anchors, objects) : empty();
     const recent = await range(["-n", "30"]);
     return {
@@ -114,9 +133,10 @@ export async function changeReader(repoRoot: string, home: string) {
       } satisfies FlowChanges,
       async sinceReader(flow: string, { commit: from, date }: { commit: string; date: string }): Promise<ChangedSince> {
         const inHistory = history.has(from);
-        const selected = await range(inHistory
-          ? [`${from}..HEAD`]
-          : [`--since-as-filter=@${Math.floor(Date.parse(date) / 1000)}`]);
+        if (inHistory && !sinceRanges.has(from)) sinceRanges.set(from, sinceCommits(from, "HEAD"));
+        const selected = inHistory
+          ? await sinceRanges.get(from)!
+          : await range([`--since-as-filter=@${Math.floor(Date.parse(date) / 1000)}`]);
         const commits = inHistory ? selected : selected.filter(commit => Date.parse(commit.date) > Date.parse(date));
         const changedAfter = (file: string) => {
           const stat = fs.statSync(path.join(repoRoot, file), { throwIfNoEntry: false });
