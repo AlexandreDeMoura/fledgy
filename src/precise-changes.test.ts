@@ -321,7 +321,7 @@ test("a broken file in a historical version leaves the readable Flows and Varian
   expect((await data()).changes.recent[0]).toMatchObject({ sha, flows: [flow], files: [{ symbols: [{ name: "other", parts: ["variant"] }] }] });
 });
 
-test("recent keeps 30 columns, while QA Results can reach farther back", async () => {
+test("recent keeps 30 columns, while QA Results and a Flow's last change reach farther back", async () => {
   const root = app();
   const { data, record } = await api(root);
   await record();
@@ -332,8 +332,24 @@ test("recent keeps 30 columns, while QA Results can reach farther back", async (
   expect(sent.changes.recent).toHaveLength(30);
   expect(sent.changes.recent[0].subject).toBe("empty 30");
   expect(sent.changes.recent.every((c: { body: unknown }) => typeof c.body === "string")).toBe(true);
-  expect(sent.changes.flows[flow].last).toBeUndefined();
+  expect(sent.changes.flows[flow].last).toMatchObject({ sha: oldChange, subject: "old change" });
   expect(sent.results[flow].main.approve.since.commits.map((c: { sha: string }) => c.sha)).toEqual([oldChange]);
+});
+
+test("a Flow's last change is found again after a new commit without reading older commits again", async () => {
+  const root = app();
+  write(root, "code.ts", code(2, 1));
+  const oldChange = commitAll(root, "old change");
+  for (let n = 0; n < 40; n++) commitAll(root, `empty ${n}`);
+  const trace = path.join(home, "git-trace");
+  vi.stubEnv("GIT_TRACE", trace);
+  const { data } = await api(root);
+  expect((await data()).changes.flows[flow].last).toMatchObject({ sha: oldChange });
+  commitAll(root, "one more");
+  fs.writeFileSync(trace, "");
+  expect((await data()).changes.flows[flow].last).toMatchObject({ sha: oldChange });
+  // Only the recent commits are read again: the older ones are already known.
+  expect(fs.readFileSync(trace, "utf8").match(/built-in: git log .*--patch/g)).toHaveLength(1);
 });
 
 test("a warm request reuses cached commit facts without starting cat-file", async () => {

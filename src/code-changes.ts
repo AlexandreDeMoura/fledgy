@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { readGit, type GitObjects } from "./change-git.js";
+import { readGit, readGitWithInput, type GitObjects } from "./change-git.js";
 import { definitionRanges, type Definition } from "./symbols.js";
 import type { FlowAnchors } from "./flow-anchors.js";
 
@@ -75,16 +75,44 @@ export function commitDiffs(root: string, range: string[], candidates: string[],
   const key = JSON.stringify(range);
   const cached = kept?.ranges.get(key);
   if (cached) return cached;
+  const commits = readCommits(root, ["--first-parent", ...range], candidates);
+  kept?.ranges.set(key, commits);
+  return commits;
+}
+
+function readCommits(root: string, args: string[], candidates: string[], input?: string): CommitDiff[] {
   if (!candidates.length) candidates = ["knowledge-base"];
-  const log = readGit(root, "log", "--first-parent", "-m", "--diff-merges=first-parent", "--root", "--full-history", "--sparse", "--full-diff",
-    ...diffArgs, `--format=${format}`, ...range, "--", ...candidates);
+  const log = readGitWithInput(root, input, "log", "-m", "--diff-merges=first-parent", "--root", "--full-history", "--sparse", "--full-diff",
+    ...diffArgs, `--format=${format}`, ...args, "--", ...candidates);
   const commits = log.split(marker).slice(1).map(record => {
     const [sha = "", date = "", subject = "", body = ""] = record.split("\0", 4);
     const offset = [sha, date, subject, body].reduce((size, field) => size + field.length + 1, 0);
     return { sha, date, subject, body, files: diffFiles(record.slice(offset)) };
   });
-  kept?.ranges.set(key, commits);
+  // A commit never changes, so its diff is kept for any later HEAD.
+  const kept = keptCommits(root, candidates);
+  const anchored = new Set(candidates);
+  for (const commit of commits) kept.set(commit.sha, { ...commit, files: commit.files.filter(file => anchored.has(file.path)) });
   return commits;
+}
+
+// The diffs of every commit read so far, by sha, while the candidate paths
+// stay the same. Only the files on those paths are kept.
+const byCommit = new Map<string, { candidates: string; commits: Map<string, CommitDiff> }>();
+function keptCommits(root: string, candidates: string[]): Map<string, CommitDiff> {
+  const key = JSON.stringify([...candidates].sort());
+  let kept = byCommit.get(root);
+  if (kept?.candidates !== key) byCommit.set(root, kept = { candidates: key, commits: new Map() });
+  return kept.commits;
+}
+
+// The diffs of these commits, in the same order, read from git only for the
+// commits not kept yet. A merge is compared with its first parent.
+export function diffsOf(root: string, shas: string[], candidates: string[]): CommitDiff[] {
+  const kept = keptCommits(root, candidates.length ? candidates : ["knowledge-base"]);
+  const missing = shas.filter(sha => !kept.has(sha));
+  if (missing.length) readCommits(root, ["--no-walk=unsorted", "--stdin"], candidates, `${missing.join("\n")}\n`);
+  return shas.flatMap(sha => kept.get(sha) ?? []);
 }
 
 function hits(definition: Definition, lines: Lines): boolean {

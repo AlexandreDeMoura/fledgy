@@ -176,9 +176,9 @@ Good to know: read those Flows in the web view and follow their Manual QA Checks
 
 Changed on your computer since the last git commit.
 
-When the agent changes `api/billing/routes.py`, where *Plan change*’s upgrade request lives, *Upgrade to Pro* shows Not committed until the change is committed.
+When the agent changes `upgrade_plan` in `api/billing/routes.py`, where *Plan change*’s upgrade request lives, *Upgrade to Pro* shows Not committed until the change is committed.
 
-Good to know: a Flow counts as changed when its own file changes, the file of a Part it names, or code that one of those Parts’ [Anchors](#anchor) points into. The web view can show only the Flows that aren’t committed, or those changed in the last commits, to tell you which Manual QA Checks to run again. With a private install the knowledge base is hidden from git, so only changes to the code count.
+Good to know: a Flow counts as changed when the code that one of its Parts’ [Anchors](#anchor) points to changes. A change to the knowledge base alone, such as the agent rewording a Flow, doesn’t count: nothing changed in the app, so there is nothing new to test. The web view shows the Flows that aren’t committed, and those changed in the recent commits, to tell you which Manual QA Checks to run again.
 
 ### Knowledge base check
 

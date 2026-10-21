@@ -3,8 +3,11 @@ import { execFileSync, spawn } from "node:child_process";
 // Literal pathspecs keep names such as app/[id]/page.tsx literal. Reads never
 // refresh the app's index, even when git status would normally do so.
 export function readGit(root: string, ...args: string[]): string {
+  return readGitWithInput(root, undefined, ...args);
+}
+export function readGitWithInput(root: string, input: string | undefined, ...args: string[]): string {
   return execFileSync("git", ["--no-optional-locks", "--literal-pathspecs", ...args], {
-    cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 128 * 1024 * 1024,
+    cwd: root, encoding: "utf8", input, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], maxBuffer: 128 * 1024 * 1024,
   });
 }
 

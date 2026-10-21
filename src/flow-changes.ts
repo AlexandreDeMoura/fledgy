@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { readGit, gitObjects } from "./change-git.js";
 import { flowAnchors, knowledgeBaseFiles, type FlowAnchors } from "./flow-anchors.js";
-import { commitDiffs, committedChanges, workingChanges, type Changes, type Commit } from "./code-changes.js";
+import { commitDiffs, committedChanges, diffsOf, workingChanges, type Changes, type Commit, type CommitDiff } from "./code-changes.js";
 import { knowledgeBaseVersions, anchorsByVersion } from "./history.js";
 import { appDataDirectory } from "./qa-results.js";
 export type { Commit } from "./code-changes.js";
@@ -84,20 +84,21 @@ export async function changeReader(repoRoot: string, home: string) {
     const candidates = [...new Set([anchors, ...byVersion.values()].flatMap(byFlow =>
       Object.values(byFlow).flat().map(anchor => anchor.file),
     ))];
+    const changesIn = async (commit: CommitDiff): Promise<RecentCommit> => {
+      const selected = pick(commit);
+      const atCommit = selected.version ? byVersion.get(selected.version.source)! : anchors;
+      return {
+        sha: commit.sha, date: commit.date, subject: commit.subject, body: commit.body,
+        ...await committedChanges(repoRoot, commit, atCommit, objects!, app!.directory),
+        anchorsFrom: selected.anchorsFrom,
+      };
+    };
     const ranges = new Map<string, Promise<RecentCommit[]>>();
     const range = (args: string[]) => {
       const key = args.join("\0");
       let answer = ranges.get(key);
       if (!answer) {
-        answer = objects && app ? Promise.all(commitDiffs(repoRoot, args, candidates, app.head).map(async commit => {
-          const selected = pick(commit);
-          const atCommit = selected.version ? byVersion.get(selected.version.source)! : anchors;
-          return {
-            sha: commit.sha, date: commit.date, subject: commit.subject, body: commit.body,
-            ...await committedChanges(repoRoot, commit, atCommit, objects, app.directory),
-            anchorsFrom: selected.anchorsFrom,
-          };
-        })) : Promise.resolve([]);
+        answer = Promise.all(objects && app ? commitDiffs(repoRoot, args, candidates, app.head).map(changesIn) : []);
         ranges.set(key, answer);
       }
       return answer;
@@ -123,10 +124,24 @@ export async function changeReader(repoRoot: string, home: string) {
 
     const uncommitted = objects ? await workingChanges(repoRoot, anchors, objects) : empty();
     const recent = await range(["-n", "30"]);
+    // A Flow's last change can be older than the recent commits. The rest of
+    // the branch is read only while a Flow with Anchors has none among them.
+    const last = new Map<string, RecentCommit>();
+    const lastIn = (commits: RecentCommit[]) => {
+      for (const commit of commits) for (const flow of commit.flows) if (!last.has(flow)) last.set(flow, commit);
+    };
+    lastIn(recent);
+    const unfound = () => Object.entries(anchors).some(([flow, own]) => own.length && !last.has(flow));
+    if (objects && app && recent.length === 30 && unfound()) {
+      const older = [...app.firstParents].slice(30);
+      for (let n = 0; n < older.length && unfound(); n += 100) {
+        lastIn(await Promise.all(diffsOf(repoRoot, older.slice(n, n + 100), candidates).map(changesIn)));
+      }
+    }
     return {
       changes: {
         flows: Object.fromEntries(Object.keys(anchors).map(flow => [flow, {
-          uncommitted: uncommitted.flows.includes(flow), last: recent.find(commit => commit.flows.includes(flow)),
+          uncommitted: uncommitted.flows.includes(flow), last: last.get(flow),
         }])),
         recent,
         uncommitted,

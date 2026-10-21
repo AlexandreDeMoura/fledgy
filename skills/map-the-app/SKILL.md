@@ -42,6 +42,8 @@ Part, Anchor, Entity, QA Step and QA Result are left to the guide (`docs/words.m
    | has a row "not looked at yet", a row naming a Flow to write, or `areas.yaml` lists a Flow to write | One line on where the mapping stands ("3 of 9 Areas done, Agents in progress with 4 Flows to write left"). | `area.md` |
    | has neither, and `areas.yaml` lists no Flow to write | One line: every Entry point is accounted for. | `end.md` |
 
+   When the Builder names a Flow to write, the session writes that Flow, whatever the record says: the opening message is one line naming it. Write it with the `write-a-flow` skill; when the Mapping record exists, bring it in line as step 5 of `area.md` says. Then tell the Builder as step 8 of `area.md` says, and stop.
+
    Done when the message is written out in your reply.
 3. **Read the session's file and follow it.**
 
