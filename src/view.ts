@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { parse } from "yaml";
-import { flowChanges, sinceReader, uncommittedFiles, type ChangedSince } from "./flow-changes.js";
+import { changeReader, type ChangedSince } from "./flow-changes.js";
 import {
   noteQaResult,
   qaResultAt,
@@ -64,16 +64,17 @@ export async function startView(
       // the error and the next load reads again.
       try {
         const file = qaResultsFile(repoRoot, home);
-        if (pathname !== "/api/data") await change(repoRoot, file, pathname, req);
-        const kb = read(repoRoot);
-        const dirty = uncommittedFiles(repoRoot);
-        const filesByFlow = Object.fromEntries(Object.keys(kb.flows).map((flow) => [flow, flowFiles(kb, flow)]));
-        sendJson(res, 200, {
-          ...kb,
-          changes: flowChanges(repoRoot, filesByFlow, dirty),
-          results: shown(repoRoot, kb, filesByFlow, dirty, readQaResults(file)),
-          resultsFile: file ?? null,
-        });
+        const reader = await changeReader(repoRoot, home);
+        try {
+          if (pathname !== "/api/data") await change(repoRoot, file, pathname, req, reader.changes);
+          const kb = read(repoRoot);
+          sendJson(res, 200, {
+            ...kb,
+            changes: reader.changes,
+            results: await shown(kb, reader, readQaResults(file)),
+            resultsFile: file ?? null,
+          });
+        } finally { reader.close(); }
       } catch (error) {
         sendJson(res, error instanceof Refused ? error.status : 500, { error: (error as Error).message });
       }
@@ -110,7 +111,7 @@ const states = ["passed", "failed", "could-not-perform"] as const;
 
 // The one thing the web view writes: a Builder's QA Results. A result is
 // only taken for a QA Step the knowledge base has.
-async function change(repoRoot: string, file: string | undefined, pathname: string, req: http.IncomingMessage) {
+async function change(repoRoot: string, file: string | undefined, pathname: string, req: http.IncomingMessage, changes: Awaited<ReturnType<typeof changeReader>>["changes"]) {
   if (!["/api/result", "/api/note", "/api/result-reset"].includes(pathname) || req.method !== "POST")
     throw new Refused(404, "Not found.");
   // Another web page can post to this server without asking, but not as JSON.
@@ -129,7 +130,7 @@ async function change(repoRoot: string, file: string | undefined, pathname: stri
   const ref = { flow, path: pathId, step };
   if (pathname === "/api/note") noteQaResult(file, ref, note);
   else if (state === "not-checked") removeQaResults(file, ref);
-  else if (states.includes(state)) recordQaResult(repoRoot, file, ref, flowFiles(kb, flow), { state, note });
+  else if (states.includes(state)) recordQaResult(repoRoot, file, ref, changes.flows[flow]?.uncommitted ?? false, { state, note });
   else throw new Refused(400, `A QA Step is not-checked, ${states.join(", ")}.`);
 }
 
@@ -146,14 +147,12 @@ async function body(req: http.IncomingMessage) {
 // The results of the QA Steps the knowledge base has now, each with what has
 // happened to its Flow since. A result whose Flow, path or QA Step is gone
 // stays in the file and is not shown.
-function shown(
-  repoRoot: string,
+async function shown(
   kb: ReturnType<typeof read>,
-  filesByFlow: Record<string, string[]>,
-  dirty: Set<string>,
+  reader: Awaited<ReturnType<typeof changeReader>>,
   results: QaResults,
 ) {
-  const since = sinceReader(repoRoot, dirty);
+  const since = reader.sinceReader;
   const out: Record<string, Record<string, Record<string, QaResult & { since: ChangedSince }>>> = {};
   for (const [flow, content] of Object.entries(kb.flows))
     for (const path of content?.paths ?? [])
@@ -162,7 +161,7 @@ function shown(
         if (result)
           ((out[flow] ??= {})[path.id] ??= {})[step!] = {
             ...result,
-            since: since(filesByFlow[flow] ?? [], result),
+            since: await since(flow, result),
           };
       }
   return out;
@@ -202,18 +201,8 @@ function read(repoRoot: string) {
   }
 }
 
-// The files a change to a Flow shows in: its own, its Parts' and the code
-// files their Anchors point into.
-function flowFiles({ flows, parts }: ReturnType<typeof read>, flowId: string): string[] {
-  const used = new Set(flows[flowId]?.paths.flatMap((path) => path.steps.flatMap((step) => step.parts ?? [])));
-  return [
-    `knowledge-base/flows/${flowId}.yaml`,
-    ...[...used].flatMap((id) => [
-      `knowledge-base/parts/${id}.yaml`,
-      ...(parts[id]?.anchors ?? []).map((anchor) => anchor.at.split("#")[0]!),
-    ]),
-  ];
-}
+// Flow change data uses code Anchors from each commit's Knowledge base
+// version; edits to Flow and Part YAML files never count as code changes.
 
 // A Variant file holds only the Steps from where it diverges; the Steps it
 // shares with the main path are put back in front, so every path reads whole.

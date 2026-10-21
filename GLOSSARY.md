@@ -11,6 +11,12 @@ _Avoid_: Main user, human, human builder, user
 **Knowledge base**:
 The set of files, kept alongside an app's code, that describe the app well enough for the **Builder** to understand it without reading the code.
 
+**Knowledge base version**:
+One saved copy of the whole **Knowledge base**, with the app commit it describes and the moment it was saved.
+
+**History store**:
+Where one **Builder**'s **Knowledge base versions** of one app are kept, on their computer, next to their **QA Results**. Like QA Results, it is not part of the Knowledge base and is never committed to the app.
+
 **Private install**:
 The library added to an app for one **Builder** only: nothing it adds is committed, so teammates and their agents never see it, and the **Knowledge base** stays on that Builder's computer. The default way to install.
 _Avoid_: Local install, personal setup

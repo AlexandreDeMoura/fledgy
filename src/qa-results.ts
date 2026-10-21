@@ -22,14 +22,19 @@ function git(repoRoot: string, ...args: string[]): string {
 // The QA Results of one Builder for one repo. They are personal and never
 // committed, so they live in the Builder's home folder, under the id of the
 // repo's first commit: the same in every branch, worktree and clone.
-export function qaResultsFile(repoRoot: string, home: string): string | undefined {
+export function appDataDirectory(repoRoot: string, home: string): string | undefined {
   try {
     // A repo can have several first commits; the oldest is listed last.
     const first = git(repoRoot, "rev-list", "--max-parents=0", "HEAD").split("\n").at(-1);
-    return first ? path.join(home, ".fledgy", first, "qa-results.json") : undefined;
+    return first ? path.join(home, ".fledgy", first) : undefined;
   } catch {
     return undefined;
   }
+}
+
+export function qaResultsFile(repoRoot: string, home: string): string | undefined {
+  const directory = appDataDirectory(repoRoot, home);
+  return directory && path.join(directory, "qa-results.json");
 }
 
 export function readQaResults(file: string | undefined): QaResults {
@@ -55,14 +60,13 @@ function write(file: string, results: QaResults) {
   fs.renameSync(`${file}.tmp`, file);
 }
 
-// Choosing a state, even the same one again, stamps the result. `flowFiles`
-// are the files a change to the Flow shows in: its own, its Parts' and the
-// code files their Anchors point into.
+// Choosing a state, even the same one again, stamps the result. The caller
+// supplies uncommitted changes using the same symbol rules as the columns.
 export function recordQaResult(
   repoRoot: string,
   file: string,
   { flow, path: pathId, step }: QaStepRef,
-  flowFiles: string[],
+  uncommitted: boolean,
   { state, note }: Pick<QaResult, "state" | "note">,
 ) {
   const results = readQaResults(file);
@@ -71,7 +75,7 @@ export function recordQaResult(
     note,
     commit: git(repoRoot, "rev-parse", "HEAD"),
     date: new Date().toISOString(),
-    uncommitted: git(repoRoot, "status", "--porcelain", "--untracked-files=all", "--", ...flowFiles) !== "",
+    uncommitted,
   };
   write(file, results);
 }

@@ -73,17 +73,18 @@ test("results survive a restart of the web view and a change of branch, in one f
 });
 
 test.each([
-  ["the Flow's file", "knowledge-base/flows/approve-a-tool-call.yaml"],
-  ["the file of a Part it uses", "knowledge-base/parts/tool-approval.yaml"],
-  ["a code file one of its Anchors points into", "web/src/tool-step.tsx"],
-])("a result records that the Flow had uncommitted changes when %s has some", async (_, changed) => {
+  ["the Flow's file", "knowledge-base/flows/approve-a-tool-call.yaml", false],
+  ["the file of a Part it uses", "knowledge-base/parts/tool-approval.yaml", false],
+  ["an anchored function", "web/src/tool-step.tsx", true],
+] as const)("a result records code changes only when editing %s", async (_, changed, expected) => {
   const { root } = committedHost();
-  fs.appendFileSync(path.join(root, changed), "\n");
+  if (expected) fs.writeFileSync(path.join(root, changed), "export function ToolStep() { return <div />; }\n");
+  else fs.appendFileSync(path.join(root, changed), "\n");
   const { record } = await view(root);
 
   const sent = await record({ ...approve, state: "passed" });
 
-  expect(sent.results[flowId].main.approve.uncommitted).toBe(true);
+  expect(sent.results[flowId].main.approve.uncommitted).toBe(expected);
 });
 
 test("uncommitted changes outside the Flow do not mark its results", async () => {

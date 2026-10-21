@@ -11,8 +11,6 @@ const flowFile = "knowledge-base/flows/approve-a-tool-call.yaml";
 const partFile = "knowledge-base/parts/tool-approval.yaml";
 const codeFile = "web/src/tool-step.tsx";
 const theFlowsFiles = [
-  ["the Flow's file", flowFile],
-  ["the file of a Part it names", partFile],
   ["a code file one of its Anchors points into", codeFile],
 ] as const;
 
@@ -30,7 +28,11 @@ function committedHost() {
   return { root, first: commitAll(root, "first") };
 }
 
-const change = (root: string, file: string) => fs.appendFileSync(path.join(root, file), "\n");
+const change = (root: string, file: string) => {
+  const full = path.join(root, file);
+  const text = fs.readFileSync(full, "utf8");
+  fs.writeFileSync(full, file.endsWith(".tsx") ? text.replace("}", " return 1;\n}") : text + "\n");
+};
 
 // Starts the web view on a host repo, with an empty folder standing in for the Builder's home folder.
 async function view(root: string) {
@@ -89,7 +91,7 @@ test.each(theFlowsFiles)("the last commit to change a Flow is the last to touch 
   expect(Date.parse(last.date)).toBeLessThanOrEqual(Date.now());
 });
 
-test("the branch's last ten commits are sent newest first, each with the Flows it changed", async () => {
+test("recent commits include code-unrelated columns without marking their Flows", async () => {
   const { root } = committedHost();
   const { data } = await view(root);
   change(root, codeFile);
@@ -103,10 +105,10 @@ test("the branch's last ten commits are sent newest first, each with the Flows i
 
   const { recent } = (await data()).changes;
 
-  expect(recent).toHaveLength(10);
-  expect(recent[0]).toMatchObject({ sha: last, subject: "Reword the Part", flows: [flowId] });
+  expect(recent).toHaveLength(13);
+  expect(recent[0]).toMatchObject({ sha: last, subject: "Reword the Part", flows: [] });
   expect(recent[1]).toMatchObject({ subject: "commit 12", flows: [] });
-  expect(recent.map((commit: { sha: string }) => commit.sha)).not.toContain(second);
+  expect(recent.map((commit: { sha: string }) => commit.sha)).toContain(second);
 });
 
 test("a Flow whose Anchor points into a path with brackets changes with that file", async () => {
@@ -127,7 +129,7 @@ test("a Flow whose Anchor points into a path with brackets changes with that fil
 test("outside a git repo no Flow has changes and there are no commits", async () => {
   const { data } = await view(hostRepo(knowledgeBase(`${codeFile}#ToolStep`, "screen")));
 
-  expect((await data()).changes).toEqual({ flows: { [flowId]: { uncommitted: false } }, recent: [] });
+  expect((await data()).changes).toEqual({ flows: { [flowId]: { uncommitted: false } }, recent: [], uncommitted: { flows: [], near: [], files: [] } });
 });
 
 test.each(theFlowsFiles)("a result is sent with the commits that touched %s since it was recorded", async (_, changed) => {
@@ -135,7 +137,7 @@ test.each(theFlowsFiles)("a result is sent with the commits that touched %s sinc
   const { data, record } = await view(root);
   const sent = await record({ ...approve, state: "passed" });
 
-  expect(sent.results[flowId].main.approve.since).toEqual({ commits: [], uncommitted: false, byDate: false });
+  expect(sent.results[flowId].main.approve.since).toEqual({ commits: [], nearCommits: [], uncommitted: false, nearUncommitted: false, byDate: false });
 
   change(root, changed);
   const second = commitAll(root, "Reword the approval");
@@ -158,15 +160,15 @@ test.each(theFlowsFiles)("a result says the Flow has uncommitted changes since w
 
   change(root, changed);
 
-  expect((await data()).results[flowId].main.approve.since).toEqual({ commits: [], uncommitted: true, byDate: false });
+  expect((await data()).results[flowId].main.approve.since).toEqual({ commits: [], nearCommits: [], uncommitted: true, nearUncommitted: false, byDate: false });
 });
 
 test("uncommitted changes a result was recorded with are not changes since", async () => {
   const { root } = committedHost();
-  change(root, flowFile);
+  change(root, codeFile);
   // The file is as it was a minute before the result.
   const earlier = new Date(Date.now() - 60_000);
-  fs.utimesSync(path.join(root, flowFile), earlier, earlier);
+  fs.utimesSync(path.join(root, codeFile), earlier, earlier);
   const { record } = await view(root);
 
   const sent = await record({ ...approve, state: "passed" });
@@ -200,14 +202,14 @@ test("a result whose commit is not in the branch's history is sent with the comm
   const trunk = git(root, "branch", "--show-current");
   const { data, record } = await view(root);
   git(root, "checkout", "--quiet", "-b", "side");
-  change(root, flowFile);
+  change(root, codeFile);
   commitAll(root, "on the side");
   await record({ ...approve, state: "passed" });
 
   git(root, "checkout", "--quiet", trunk);
-  change(root, partFile);
+  change(root, codeFile);
   commitAllAt(root, "an hour before the result", -60);
-  change(root, partFile);
+  change(root, codeFile);
   const after = commitAllAt(root, "an hour after the result", 60);
   fs.writeFileSync(path.join(root, "web/src/other.tsx"), "export const other = 1;\n");
   commitAllAt(root, "outside the Flow", 120);

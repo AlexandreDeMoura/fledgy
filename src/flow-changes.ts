@@ -1,125 +1,145 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { readGit, gitObjects } from "./change-git.js";
+import { flowAnchors, knowledgeBaseFiles } from "./flow-anchors.js";
+import { commitDiffs, committedChanges, workingChanges, type Changes, type Commit } from "./code-changes.js";
+import { knowledgeBaseVersions, versionAnchors } from "./history.js";
+import { appDataDirectory } from "./qa-results.js";
+export type { Commit } from "./code-changes.js";
 
-// What git says has happened to each Flow. A Flow changed when one of its
-// files did: its own, its Parts' and the code files their Anchors point into.
-export type Commit = { sha: string; subject: string; date: string };
+// Only code changes count: a changed anchored definition changes its Flows;
+// another change in its file comes near them. Calls outside Anchors are not
+// followed: Anchors point where code starts, not to every dependency it calls.
+export type AnchorsFrom = "exact" | "after" | "disk" | "before-first";
+export type RecentCommit = Commit & Changes & { anchorsFrom: AnchorsFrom };
 export type FlowChanges = {
-  // `last` is the last commit to change the Flow, absent when none did.
   flows: Record<string, { uncommitted: boolean; last?: Commit }>;
-  // The branch's last commits, newest first, each with the Flows it changed.
-  recent: (Commit & { flows: string[] })[];
+  recent: RecentCommit[];
+  uncommitted: Changes;
+};
+export type ChangedSince = {
+  commits: Commit[];
+  nearCommits: Commit[];
+  uncommitted: boolean;
+  nearUncommitted: boolean;
+  byDate: boolean;
 };
 
-// A path is taken as written, so the brackets of `app/[id]/page.tsx` are not a pattern.
-function git(repoRoot: string, ...args: string[]): string {
-  return execFileSync("git", ["--literal-pathspecs", ...args], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    maxBuffer: 64 * 1024 * 1024,
-  });
+const appHistories = new Map<string, { head: string; directory: string; commits: Set<string> }>();
+const ancestors = new Map<string, Set<string>>();
+
+function appHistory(root: string, home: string) {
+  const key = `${root}\0${home}`;
+  try {
+    const head = readGit(root, "rev-parse", "HEAD").trim();
+    const previous = appHistories.get(key);
+    if (previous?.head === head) return previous;
+    const commits = new Set(readGit(root, "rev-list", "HEAD").trim().split("\n"));
+    const directory = appDataDirectory(root, home)!;
+    const history = { head, directory, commits };
+    appHistories.set(key, history);
+    return history;
+  } catch {
+    return undefined; // not a git repo, or no app commit yet
+  }
 }
 
-// `filesByFlow` holds each Flow's files, as paths from the root of the repo;
-// `dirty` is what `uncommittedFiles` found.
-export function flowChanges(repoRoot: string, filesByFlow: Record<string, string[]>, dirty: Set<string>): FlowChanges {
-  return {
-    flows: Object.fromEntries(
-      Object.entries(filesByFlow).map(([flow, files]) => [
-        flow,
-        { uncommitted: files.some((file) => dirty.has(file)), last: commits(repoRoot, files, "-n", "1")[0] },
-      ]),
-    ),
-    recent: recentCommits(repoRoot, filesByFlow),
-  };
-}
+const empty = (): Changes => ({ flows: [], near: [], files: [] });
 
-// What has happened to a Flow since a QA Result was recorded on it. `byDate`
-// says the result's commit is not in the branch's history, so the commits
-// are the ones made after the result's date.
-export type ChangedSince = { commits: Commit[]; uncommitted: boolean; byDate: boolean };
+// Shared by the recent columns and every QA Result in one /api/data request.
+export async function changeReader(repoRoot: string, home: string) {
+  const anchors = flowAnchors(knowledgeBaseFiles(repoRoot));
+  const app = appHistory(repoRoot, home);
+  const store = app && path.join(app.directory, "history.git");
+  const objects = app
+    ? gitObjects(repoRoot, store && fs.existsSync(store) ? path.join(store, "objects") : undefined)
+    : undefined;
+  try {
+    const versions = app ? knowledgeBaseVersions(repoRoot, store, app.head) : [];
+    const history = app?.commits ?? new Set<string>();
+    const oldest = versions[0];
+    const ancestorKey = oldest && `${repoRoot}\0${oldest.appCommit}`;
+    if (ancestorKey && history.has(oldest!.appCommit) && !ancestors.has(ancestorKey)) {
+      ancestors.set(ancestorKey, new Set(readGit(repoRoot, "rev-list", oldest!.appCommit).trim().split("\n").slice(1)));
+    }
+    const beforeFirst = ancestorKey && history.has(oldest!.appCommit) ? ancestors.get(ancestorKey) : undefined;
 
-// Reads what has happened since for the results of one request. `dirty` is
-// what `uncommittedFiles` found. Results recorded on the same commit of the
-// same Flow share one answer from git.
-export function sinceReader(repoRoot: string, dirty: Set<string>) {
-  const asked = new Map<string, unknown>();
-  const once = <T>(key: string, ask: () => T): T => {
-    if (!asked.has(key)) asked.set(key, ask());
-    return asked.get(key) as T;
-  };
-
-  // `files` are the Flow's files; `commit` and `date` are where and when the
-  // result was recorded.
-  return (files: string[], { commit: from, date }: { commit: string; date: string }): ChangedSince => {
-    // git does not say when an uncommitted change was made, the file does. A
-    // deleted file says nothing, so it counts.
-    const changedAfter = (file: string) => {
-      const stat = fs.statSync(path.join(repoRoot, file), { throwIfNoEntry: false });
-      return !stat || stat.mtimeMs > Date.parse(date);
+    // Selection is by exact app commit, then save time, never ancestry. Only
+    // the before-first flag uses ancestry. In Private installs a branch switch
+    // can select a version saved on another branch (a known limit).
+    const pick = (commit: Commit) => {
+      const exact = versions.filter(version => version.appCommit === commit.sha).at(-1);
+      if (exact) return { version: exact, anchorsFrom: "exact" as const };
+      const before = oldest && (beforeFirst
+        ? beforeFirst.has(commit.sha)
+        : Date.parse(commit.date) < Date.parse(oldest.saved));
+      const version = versions.find(version => Date.parse(version.saved) > Date.parse(commit.date));
+      return {
+        version: version ?? (before ? oldest : undefined),
+        anchorsFrom: before ? "before-first" as const : version ? "after" as const : "disk" as const,
+      };
     };
-    const inHistory = once(from, () => isAncestor(repoRoot, from));
-    const range = inHistory ? `${from}..HEAD` : `--since=@${Math.floor(Date.parse(date) / 1000)}`;
+    const allAnchors = objects ? await Promise.all(versions.map(version => versionAnchors(version, objects))) : [];
+    const candidates = [...new Set([anchors, ...allAnchors].flatMap(byFlow =>
+      Object.values(byFlow).flat().map(anchor => anchor.file),
+    ))];
+    const ranges = new Map<string, Promise<RecentCommit[]>>();
+    const range = (args: string[]) => {
+      const key = args.join("\0");
+      let answer = ranges.get(key);
+      if (!answer) {
+        answer = objects && app ? Promise.all(commitDiffs(repoRoot, args, candidates, app.head).map(async commit => {
+          const selected = pick(commit);
+          const atCommit = selected.version ? await versionAnchors(selected.version, objects) : anchors;
+          return {
+            sha: commit.sha, date: commit.date, subject: commit.subject, body: commit.body,
+            ...await committedChanges(repoRoot, commit, atCommit, objects, app.directory),
+            anchorsFrom: selected.anchorsFrom,
+          };
+        })) : Promise.resolve([]);
+        ranges.set(key, answer);
+      }
+      return answer;
+    };
+
+    const uncommitted = objects ? await workingChanges(repoRoot, anchors, objects) : empty();
+    const recent = await range(["-n", "30"]);
     return {
-      commits: once([range, ...files].join("\0"), () => commits(repoRoot, files, range)),
-      uncommitted: files.some((file) => dirty.has(file) && changedAfter(file)),
-      byDate: !inHistory,
+      changes: {
+        flows: Object.fromEntries(Object.keys(anchors).map(flow => [flow, {
+          uncommitted: uncommitted.flows.includes(flow), last: recent.find(commit => commit.flows.includes(flow)),
+        }])),
+        recent,
+        uncommitted,
+      } satisfies FlowChanges,
+      async sinceReader(flow: string, { commit: from, date }: { commit: string; date: string }): Promise<ChangedSince> {
+        const inHistory = history.has(from);
+        const selected = await range(inHistory
+          ? [`${from}..HEAD`]
+          : [`--since-as-filter=@${Math.floor(Date.parse(date) / 1000)}`]);
+        const commits = inHistory ? selected : selected.filter(commit => Date.parse(commit.date) > Date.parse(date));
+        const changedAfter = (file: string) => {
+          const stat = fs.statSync(path.join(repoRoot, file), { throwIfNoEntry: false });
+          return !stat || stat.mtimeMs > Date.parse(date);
+        };
+        // The mtime gate only applies to files that changed or came near this
+        // Flow; edits to the Knowledge base itself never count.
+        const dirty = uncommitted.files.filter(file =>
+          anchors[flow]?.some(anchor => anchor.file === file.path) && changedAfter(file.path),
+        );
+        const changes = dirty.some(file => file.flows.includes(flow));
+        return {
+          commits: commits.filter(commit => commit.flows.includes(flow)),
+          nearCommits: commits.filter(commit => commit.near.includes(flow)),
+          uncommitted: changes,
+          nearUncommitted: !changes && dirty.some(file => file.near.includes(flow)),
+          byDate: !inHistory,
+        };
+      },
+      close() { objects?.close(); },
     };
-  };
-}
-
-function isAncestor(repoRoot: string, sha: string): boolean {
-  try {
-    git(repoRoot, "merge-base", "--is-ancestor", sha, "HEAD");
-    return true;
-  } catch {
-    return false; // on another branch, or a commit this clone does not have
-  }
-}
-
-function recentCommits(repoRoot: string, filesByFlow: Record<string, string[]>): FlowChanges["recent"] {
-  let log: string;
-  try {
-    log = git(repoRoot, "-c", "core.quotePath=false", "log", "-n", "10", "--name-only", `--format=%x1e${commitFormat}`);
-  } catch {
-    return []; // not a git repo, or one with no commit
-  }
-  return log
-    .split("\x1e")
-    .filter(Boolean)
-    .map((record) => {
-      const [head = "", ...touched] = record.split("\n");
-      const flows = Object.keys(filesByFlow).filter((flow) => filesByFlow[flow]!.some((file) => touched.includes(file)));
-      return { ...commit(head), flows };
-    });
-}
-
-const commitFormat = "%H%x1f%cI%x1f%s";
-function commit(line: string): Commit {
-  const [sha = "", date = "", subject = ""] = line.split("\x1f");
-  return { sha, date, subject };
-}
-
-// The commits that touched one of `files`, newest first, narrowed by `range`.
-function commits(repoRoot: string, files: string[], ...range: string[]): Commit[] {
-  try {
-    return git(repoRoot, "log", `--format=${commitFormat}`, ...range, "--", ...files)
-      .split("\n")
-      .filter(Boolean)
-      .map(commit);
-  } catch {
-    return []; // not a git repo, or one with no commit
-  }
-}
-
-// The files that are new, changed or deleted and not committed, staged or not.
-export function uncommittedFiles(repoRoot: string): Set<string> {
-  try {
-    const entries = git(repoRoot, "status", "--porcelain", "--untracked-files=all", "--no-renames", "-z").split("\0");
-    return new Set(entries.filter(Boolean).map((entry) => entry.slice(3)));
-  } catch {
-    return new Set(); // not a git repo
+  } catch (error) {
+    objects?.close();
+    throw error;
   }
 }

@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import { saveKnowledgeBaseVersion } from "./history.js";
 import { type Problem, runDeterministicCheck } from "./deterministic-check.js";
 
 // What Claude Code reads from a Stop hook's stdout: `decision: "block"` sends
@@ -20,10 +22,13 @@ export function problemLines(problems: Problem[]): string {
 // sends the agent back once; if it still fails when the agent stops again,
 // the agent is let go and the Builder is shown what is left. `sentBackAlready`
 // is Claude Code's `stop_hook_active`.
-export async function stopHook(repoRoot: string, sentBackAlready: boolean): Promise<Answer | undefined> {
+export async function stopHook(repoRoot: string, sentBackAlready: boolean, home = os.homedir()): Promise<Answer | undefined> {
   // A host that ran `init` before writing its first Flow has nothing to check.
-  if (!fs.existsSync(path.join(repoRoot, "knowledge-base"))) return undefined;
-  const failing = await whatFails(repoRoot);
+  const exists = fs.existsSync(path.join(repoRoot, "knowledge-base"));
+  const failing = exists ? await whatFails(repoRoot) : undefined;
+  try { saveKnowledgeBaseVersion(repoRoot, home); } catch {
+    // Personal history must never change the Stop hook's answer.
+  }
   if (!failing) return undefined;
   // No command is suggested to the Builder: in a private install `npx fledgy
   // check` would fetch a copy from npm, and the agent knows the right one.

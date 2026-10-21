@@ -94,3 +94,34 @@ export async function countDefinitions(file: string, symbol: string): Promise<nu
   }
   return found.length;
 }
+
+// Include wrappers such as Python decorators and multiline exports in the
+// definition's extent, while retaining the check's definition discovery rules.
+function definitionRange(name: string, node: Node): Definition {
+  let outer = node;
+  while (outer.parent && WRAPPERS.has(outer.parent.type) && definitionsIn(outer.parent).length === 1) outer = outer.parent;
+  return { name, start: outer.startPosition.row + 1, end: outer.endPosition.row + 1 };
+}
+
+export type Definition = { name: string; start: number; end: number };
+
+// The same definitions as the Deterministic Check, with one-based line ranges.
+// A parse error means history must fall back to file level; the check's existing
+// acceptance rules remain unchanged.
+export async function definitionRanges(file: string, content: string): Promise<Definition[] | undefined> {
+  if (!GRAMMAR_BY_EXTENSION[path.extname(file)] || content.includes("\0")) return undefined;
+  const tree = (await parserFor(file)).parse(content);
+  if (!tree) return undefined;
+  try {
+    if (tree.rootNode.hasError) return undefined;
+    const definitions: Definition[] = [];
+    for (const { name, node } of definitionsIn(tree.rootNode)) {
+      definitions.push(definitionRange(name, node));
+      if (["class_declaration", "abstract_class_declaration", "class_definition"].includes(node.type)) {
+        const body = node.childForFieldName("body");
+        if (body) for (const member of definitionsIn(body)) definitions.push(definitionRange(`${name}.${member.name}`, member.node));
+      }
+    }
+    return definitions;
+  } finally { tree.delete(); }
+}
