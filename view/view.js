@@ -6,7 +6,9 @@
 // Steps of the chosen one on the right, each with its Parts, one of which can be opened to show
 // where it lives in the code. "Check by hand" holds the path's Manual QA Check: a row per QA Step,
 // the current one open to record its result, by click or by key, and move on to the next.
-// The Overview and the Changes still show the former home page, until their own pages are made.
+// The Overview says how many Flows are written and how many wait to be, which Flows changed since the
+// last commit and in it, and which Flows to write to start with. The Changes still show the former home
+// page, until its own page is made.
 // Every term on screen is underlined, and hovering or focusing it shows its sentence from the guide.
 // Everything on screen but the Areas folded in the sidebar is addressed by the URL, so any state
 // can be reloaded or shared.
@@ -262,7 +264,7 @@ function clearSearch() {
 function sidebar(fid) {
   const tw = q('tw');
   const uncommitted = Object.keys(DATA.flows).filter((id) => changes(id).uncommitted).length;
-  const page = fid ? 'flow' : q('show') ? 'changes' : 'overview';
+  const page = fid ? 'flow' : q('page') === 'changes' ? 'changes' : 'overview';
   const areas = areaList();
   const icon = (d) => `<svg viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
 
@@ -314,7 +316,7 @@ function sidebar(fid) {
     </div>
     <nav class="d-snav">
       <a class="d-snavi ${page === 'overview' ? 'on' : ''}" href="/">${icon('<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>')}Overview</a>
-      <a class="d-snavi ${page === 'changes' ? 'on' : ''}" href="/?show=10">${icon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="6.5" r="1.5"/><path d="M4.5 5v6M11.5 8c0 2-2 2.5-5 3.5"/>')}Changes${
+      <a class="d-snavi ${page === 'changes' ? 'on' : ''}" href="/?page=changes&show=10">${icon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="6.5" r="1.5"/><path d="M4.5 5v6M11.5 8c0 2-2 2.5-5 3.5"/>')}Changes${
         uncommitted ? `<span class="d-badge" title="${plural(uncommitted, 'Flow')} not committed">${uncommitted}</span>` : ''
       }</a>
     </nav>
@@ -350,8 +352,97 @@ function placePopover() {
   pop.style.top = `${Math.max(12, Math.min(top, innerHeight - pop.offsetHeight - 12))}px`;
 }
 
+// ---------- the Overview: how far the map has come, what just changed, what to write next ----------
+
+const and = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
+const flowCard = (fid, cls = '') =>
+  `<a class="d-ocard ${cls}" href="${esc(flowHref(fid))}"><span>${esc(DATA.flows[fid].name)}</span><span class="d-oopen">Open →</span></a>`;
+// The guide's headings a Builder new to the words is most likely to need.
+const GUIDE_WORDS = [
+  ['knowledge-base', 'The knowledge base'],
+  ['flow', 'Flow'],
+  ['main-path', 'Main path and Variants'],
+  ['part', 'Part'],
+  ['manual-qa-check', 'Manual QA Check'],
+];
+
+function overview() {
+  const written = Object.keys(DATA.flows);
+  const TW = toWrite();
+  const uncommitted = (DATA.changes.uncommitted?.flows ?? []).filter((id) => DATA.flows[id]);
+  const last = DATA.changes.recent[0];
+  const line = (html) => `<span>${html}</span>`;
+  const n = (x, cls = '') => `<b class="${cls}">${x}</b>`;
+
+  const head = written.length
+    ? [
+        line(`${n(written.length)} ${term('flow', written.length === 1 ? 'Flow' : 'Flows')} ${written.length === 1 ? 'is' : 'are'} written.`),
+        TW.length ? line(`${n(`${TW.length} more`)} ${TW.length === 1 ? 'is' : 'are'} ${term('towrite', 'waiting to be written')}.`) : '',
+        uncommitted.length ? line(`${n(uncommitted.length, 'amber')} changed on your computer ${last ? 'since the last commit' : `and ${uncommitted.length === 1 ? 'is' : 'are'} not committed yet`}.`) : '',
+      ]
+    : Object.keys(DATA.areas).length
+      ? [line(`No ${term('flow', 'Flow')} is written yet.`), TW.length ? line(`${n(TW.length)} ${TW.length === 1 ? 'is' : 'are'} waiting to be written.`) : '']
+      : [line('Nothing is mapped yet.')];
+
+  let body;
+  if (!written.length) {
+    body = `<p class="d-otext">${
+      Object.keys(DATA.areas).length
+        ? `The ${term('area', 'Areas')} and the ${term('towrite', 'Flows to write')} are listed on the left. In Claude Code, type <code>/map-the-app</code> to carry on: Fledgy writes the Flows with you, one Area at a time.`
+        : 'In Claude Code, type <code>/map-the-app</code>. Fledgy reads your code, proposes the Areas it sees for you to correct, then writes their Flows with you, one Area at a time. This page fills in as it goes.'
+    }</p>`;
+  } else {
+    const notCommitted = uncommitted.length
+      ? `<section class="d-osec">
+          <div class="d-ohead"><i class="d-odot amber"></i>${term('uncommitted', 'Not committed yet')}</div>
+          <div class="d-ocards one">${uncommitted.map((id) => flowCard(id, 'amber')).join('')}</div>
+        </section>`
+      : '';
+    let lastCommit = '';
+    if (last) {
+      const changed = last.flows.filter((id) => DATA.flows[id]);
+      lastCommit = `<section class="d-osec">
+          <div class="d-ohead"><i class="d-odot blue"></i>In the last commit<span class="d-ocommit"><span title="${esc(last.sha)}">${esc(short(last))}</span> “${esc(last.subject)}” · ${esc(ago(last.date))}</span></div>
+          ${changed.length ? `<div class="d-ocards">${changed.map((id) => flowCard(id)).join('')}</div>` : '<p class="d-otext dim">It changed no Flow.</p>'}
+        </section>`;
+    }
+    let still = '';
+    if (TW.length) {
+      const perArea = areaList()
+        .filter((a) => a.toWrite.length)
+        .map((a) => `${a.toWrite.length} in ${esc(areaName(a.id))}`);
+      // The Flows to write that written Flows wait for come first: the most waited for, at most three.
+      const waited = TW.filter((e) => e.waited.length).sort((a, b) => b.waited.length - a.waited.length);
+      const named = waited.slice(0, 3).map((e) => `<button class="d-otw" data-tw="${esc(e.id)}">${esc(e.name)}</button>`);
+      if (waited.length > 3) named.push(plural(waited.length - 3, 'other'));
+      const many = waited.length > 1 || waited[0]?.waited.length > 1;
+      const start = waited.length
+        ? ` Start with ${and(named)}: ${many ? 'written Flows already depend' : 'a written Flow already depends'} on ${waited.length > 1 ? 'them' : 'it'}.`
+        : '';
+      still = `<section class="d-osec d-ostill">
+          <div class="d-ohead"><i class="d-twicon"></i>${term('towrite', 'Still to write')}</div>
+          <p class="d-otext">${perArea.join(', ')}.${start}</p>
+          <p class="d-osmall">To write them, type <code>/map-the-app</code> in Claude Code.</p>
+        </section>`;
+    }
+    body = notCommitted + lastCommit + still;
+  }
+
+  return `<div class="d-over" data-pane="overview" data-key="overview">
+    <div class="d-ocol">
+      <div class="d-lab d-oeyebrow">${esc(DATA.repo.name)} · Knowledge base</div>
+      <h1 class="d-ohead1">${head.join('')}</h1>
+      ${body}
+      <div class="d-owords">
+        <p>Not sure what a word means? The guide explains each one in more depth.</p>
+        <div class="d-opills">${GUIDE_WORDS.map(([id, label]) => `<a class="d-opill" href="${GUIDE}#${id}" target="_blank" rel="noopener">${label}</a>`).join('')}<a class="d-link d-oguide" href="${GUIDE}" target="_blank" rel="noopener">Whole guide ↗</a></div>
+      </div>
+    </div>
+  </div>`;
+}
+
 // ---------- the former home page: Flows grouped by Area, with a preview ----------
-// Shown as the Overview and the Changes until their own pages are made.
+// Shown as the Changes until its own page is made.
 
 const FILTERS = [
   ['', 'All'],
@@ -878,7 +969,7 @@ function render() {
   const fid = DATA.flows[q('flow')] ? q('flow') : null;
   document.title = fid ? `${DATA.flows[fid].name} · Fledgy` : `Fledgy · ${DATA.repo.name}`;
   hideTip();
-  app.innerHTML = `<div class="d-shell">${sidebar(fid)}<main class="d-main">${fid ? flowPage(fid) : home()}</main></div>${twPopover()}`;
+  app.innerHTML = `<div class="d-shell">${sidebar(fid)}<main class="d-main">${fid ? flowPage(fid) : q('page') === 'changes' ? home() : overview()}</main></div>${twPopover()}`;
   for (const el of document.querySelectorAll('[data-pane]')) if (kept[el.dataset.pane]?.key === el.dataset.key) el.scrollTop = kept[el.dataset.pane].top;
   if (searching) {
     const input = app.querySelector('[data-search]');
