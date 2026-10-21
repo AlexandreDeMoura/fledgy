@@ -1,25 +1,38 @@
 // The web view of the knowledge base. It is read-only but for one thing: on a Flow's page the
 // Builder records a QA Result on each QA Step, one of four states and a note.
-// A home page lists the Flows grouped by Area, can be narrowed to the Flows that changed (not
-// committed yet, or in the last commits) and previews one; under them, always in view, the
-// Flows to write. A page per Flow: its facts, a chip per path and the strip of Steps on top, and
-// two panes below that scroll on their own: the current Step with its Parts, and the current
-// path's Manual QA Check. While one pane is being scrolled the other blurs and carries a
-// table of contents of the scrolled one.
+// A sidebar is always in view: a search, the Overview and the Changes, then every Area with its
+// Flows and its Flows to write. A Flow to write opens in a popover that says how to write it.
+// A page per Flow: its facts, then two tabs. "Read the Flow" lists the paths on the left and the
+// Steps of the chosen one on the right, each with its Parts, one of which can be opened to show
+// where it lives in the code. "Check by hand" holds the path's Manual QA Check.
+// The Overview and the Changes still show the former home page, until their own pages are made.
 // Every term on screen is underlined, and hovering or focusing it shows its sentence from the guide.
-// Everything on screen is addressed by the URL, so any state can be reloaded or shared.
+// Everything on screen but the Areas folded in the sidebar is addressed by the URL, so any state
+// can be reloaded or shared.
 
 let DATA;
+let READ_AT = 0; // when the knowledge base was last read
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const q = (k) => new URL(location.href).searchParams.get(k);
 const set = (obj) => `data-set="${esc(JSON.stringify(obj))}"`;
+// A change of state within a page replaces the address; going to another page adds one, so Back returns.
 function setQ(obj) {
   const u = new URL(location.href);
   for (const [k, v] of Object.entries(obj)) v == null ? u.searchParams.delete(k) : u.searchParams.set(k, v);
   history.replaceState(null, '', u);
   render();
 }
+function go(href) {
+  history.pushState(null, '', href);
+  render();
+}
+window.addEventListener('popstate', () => render());
+const flowHref = (fid, extra = {}) => {
+  const u = new URLSearchParams({ flow: fid });
+  for (const [k, v] of Object.entries(extra)) if (v != null) u.set(k, v);
+  return `/?${u}`;
+};
 
 // ---------- the words: a tooltip on each term, with its sentence and a link into the guide ----------
 
@@ -87,11 +100,17 @@ document.addEventListener('scroll', (e) => !e.target.closest?.('.d-tip') && hide
 
 // A Flow names its Area in a field; its id is its file name alone.
 const areaOf = (id) => DATA.flows[id]?.area ?? '';
+const areaName = (aid) => DATA.areas[aid]?.name ?? (aid || 'No Area');
+const actorName = (f) => DATA.actors[f.actor]?.name ?? f.actor;
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 function ago(date) {
   const min = Math.round((Date.now() - Date.parse(date)) / 60000);
   if (min < 1) return 'just now';
   return `${min < 60 ? plural(min, 'minute') : min < 1440 ? plural(Math.round(min / 60), 'hour') : plural(Math.round(min / 1440), 'day')} ago`;
+}
+function readAgo() {
+  const s = Math.max(0, Math.round((Date.now() - READ_AT) / 1000));
+  return s < 60 ? `read ${s} s ago` : `read ${ago(new Date(READ_AT).toISOString())}`;
 }
 
 // ---------- QA Results: one of four states per QA Step ----------
@@ -116,22 +135,25 @@ function qaChip(fid, P) {
   const cls = t.failed ? 'failed' : t.passed === t.all ? 'passed' : t['could-not-perform'] ? 'could-not-perform' : '';
   return `<span class="d-qa ${cls}">${term('qachip', `QA ${t.failed ? `${t.failed} failed` : `${t.passed}/${t.all} passed`}`, true)}</span>`;
 }
+// One square per QA Step of a path, in the colour of its result.
+const squares = (fid, p) => `<span class="d-sq">${p.qa.steps.map((qs) => `<i class="s-${result(fid, p, qs).state}"></i>`).join('')}</span>`;
+const moved = (r) => r.since && (r.since.commits.length || r.since.uncommitted);
+// The state of a whole Flow, as its dot in the sidebar says it: what failed first, then what to check again.
+function flowState(fid) {
+  const P = DATA.flows[fid].paths;
+  const all = P.flatMap((p) => p.qa.steps.map((qs) => result(fid, p, qs)));
+  if (all.some((r) => r.state === 'failed')) return ['failed', 'A QA Step failed'];
+  if (all.some(moved)) return ['again', 'QA results were recorded before a change'];
+  if (all.some((r) => r.state === 'could-not-perform')) return ['again', 'A QA Step could not be performed'];
+  if (all.length && all.every((r) => r.state === 'passed')) return ['passed', 'Every QA Step passed'];
+  return [all.some((r) => r.state !== 'not-checked') ? 'some' : 'none', all.some((r) => r.state !== 'not-checked') ? 'Some QA Steps checked' : 'No QA Step checked'];
+}
 // The answer to a change is the whole of the data again, or why the change was refused.
 async function post(url, body) {
   const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const sent = await r.json();
   REFUSED = r.ok ? null : sent.error;
   if (r.ok) DATA = sent;
-}
-
-// ---------- shared pieces ----------
-
-function bar(crumbs, right) {
-  return `<div class="d-bar">
-    <a class="d-logo" href="/"><i></i>Fledgy</a>
-    ${crumbs.map((c) => `<span class="d-sl">/</span>${c}`).join('')}
-    <div class="d-barr"><i class="d-dot"></i>${term('live', 'Live from knowledge-base/')}${right}</div>
-  </div>`;
 }
 
 // The Flow page states both lines even when empty; the home preview keeps only the ones that say something.
@@ -143,14 +165,14 @@ function sides(s, compact) {
 }
 
 // ---------- git: what changed a Flow ----------
-// A Flow changed when its own file did, the file of a Part it names, or a code file one of those Parts' Anchors points into.
+// A Flow changed when the code one of its Parts' Anchors points to changed.
 
 const short = (c) => c.sha.slice(0, 7);
 const changes = (fid) => DATA.changes.flows[fid] ?? { uncommitted: false };
 const commitRow = (c) =>
   `<div class="d-commit"><span class="d-mono" title="${esc(c.sha)}">${esc(short(c))}</span><span>${esc(c.subject)}</span><span class="d-when">${esc(ago(c.date))}</span></div>`;
 
-// ---------- Flows to write: entries under an Area in areas.yaml, with no file ----------
+// ---------- Areas, Flows and Flows to write, in the order of the sidebar ----------
 
 // Every Flow to write, with the written Flows that have a precondition waiting for it.
 function toWrite() {
@@ -164,8 +186,177 @@ function toWrite() {
     }))
   );
 }
+// Every Area of areas.yaml, even one with no Flow yet, then any Area a Flow names that the file lacks.
+function areaList() {
+  const TW = toWrite();
+  const ids = [...new Set([...Object.keys(DATA.areas), ...Object.keys(DATA.flows).map(areaOf)])];
+  return ids.map((id) => ({
+    id,
+    known: !!DATA.areas[id],
+    flows: Object.keys(DATA.flows).filter((fid) => areaOf(fid) === id),
+    toWrite: TW.filter((e) => e.area === id),
+  }));
+}
+const flowOrder = () => areaList().flatMap((a) => a.flows);
+// The first Step, in the order of the sidebar, that names a Part.
+function firstUse(pid) {
+  for (const fid of flowOrder())
+    for (const p of DATA.flows[fid].paths) {
+      const step = p.steps.findIndex((s) => !s.shared && (s.parts ?? []).includes(pid));
+      if (step >= 0) return { fid, path: p.id, step };
+    }
+}
 
-// ---------- home: Flows grouped by Area, with a preview, and the Flows to write under them ----------
+// ---------- the sidebar ----------
+
+const EXPANDED = new Map(); // Area id → whether the Builder unfolded it
+const TWOPEN = new Map(); // Area id → whether the Builder unfolded its Flows to write
+
+let SEARCH = '';
+let SEARCH_AT = 0; // the result Enter opens
+function searchResults() {
+  const t = SEARCH.trim().toLowerCase();
+  if (!t) return [];
+  const has = (s) => String(s ?? '').toLowerCase().includes(t);
+  const out = [];
+  for (const fid of flowOrder()) {
+    const f = DATA.flows[fid];
+    if (has(f.name) || has(f.goal)) out.push({ kind: 'Flow', name: f.name, sub: areaName(areaOf(fid)), href: flowHref(fid), named: has(f.name) });
+  }
+  for (const e of toWrite()) if (has(e.name) || has(e.is)) out.push({ kind: 'Flow to write', name: e.name, sub: areaName(e.area), tw: e.id, named: has(e.name) });
+  for (const [pid, part] of Object.entries(DATA.parts)) {
+    if (!part || !(has(part.name) || has(part.is))) continue;
+    // A Part opens where it is first named; one that no Step names has nowhere to open.
+    const at = firstUse(pid);
+    if (!at) continue;
+    out.push({
+      kind: part.entity ? 'Entity' : 'Part',
+      name: part.name ?? pid,
+      sub: `in ${DATA.flows[at.fid].name}, step ${at.step + 1}`,
+      href: flowHref(at.fid, { path: at.path === 'main' ? null : at.path, step: at.step, part: pid }),
+      named: has(part.name),
+    });
+  }
+  // What is named so comes before what only mentions it.
+  return out.sort((a, b) => b.named - a.named).slice(0, 12);
+}
+function searchList() {
+  if (!SEARCH.trim()) return '';
+  const found = searchResults();
+  if (!found.length) return '<div class="d-results"><div class="d-rnone">Nothing found.</div></div>';
+  SEARCH_AT = Math.min(SEARCH_AT, found.length - 1);
+  return `<div class="d-results">${found
+    .map((r, i) => {
+      const inner = `<span class="d-rname">${esc(r.name)}</span><span class="d-rkind">${esc(r.kind)}</span><span class="d-rsub">${esc(r.sub)}</span>`;
+      const cls = `d-result ${i === SEARCH_AT ? 'on' : ''}`;
+      return r.tw ? `<button class="${cls}" data-tw="${esc(r.tw)}" data-found>${inner}</button>` : `<a class="${cls}" href="${esc(r.href)}" data-found>${inner}</a>`;
+    })
+    .join('')}</div>`;
+}
+function showSearch() {
+  const box = document.querySelector('.d-search');
+  box?.querySelector('.d-results')?.remove();
+  box?.insertAdjacentHTML('beforeend', searchList());
+}
+function clearSearch() {
+  SEARCH = '';
+  SEARCH_AT = 0;
+  if (document.activeElement?.matches('[data-search]')) document.activeElement.blur();
+}
+
+function sidebar(fid) {
+  const tw = q('tw');
+  const uncommitted = Object.keys(DATA.flows).filter((id) => changes(id).uncommitted).length;
+  const page = fid ? 'flow' : q('show') ? 'changes' : 'overview';
+  const areas = areaList();
+  const icon = (d) => `<svg viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
+
+  const flowRow = (id) => {
+    const [state, why] = flowState(id);
+    return `<a class="d-sflow ${id === fid ? 'on' : ''}" href="${esc(flowHref(id))}">
+      <i class="d-sdot ${state}" title="${esc(why)}"></i><span class="d-sfname">${esc(DATA.flows[id].name)}</span>
+      ${changes(id).uncommitted ? `<span class="d-stag amber">${term('uncommitted', 'not committed', true)}</span>` : ''}
+    </a>`;
+  };
+  const toWriteBlock = (a) => {
+    if (!a.toWrite.length) return '';
+    const open = TWOPEN.get(a.id) ?? a.toWrite.some((e) => e.id === tw);
+    const head = open
+      ? `<button class="d-stw open" data-twlist="${esc(a.id)}"><i class="d-twicon"></i>${term('towrite', 'To write', true)}<span class="d-scount">${a.toWrite.length} ▴</span></button>`
+      : `<button class="d-stw" data-twlist="${esc(a.id)}"><i class="d-twicon"></i>${term('towrite', `${a.toWrite.length} to write`, true)}</button>`;
+    return `${head}${
+      open
+        ? a.toWrite
+            .map(
+              (e) => `<button class="d-stwe ${e.id === tw ? 'on' : ''}" data-tw="${esc(e.id)}"><span class="d-sfname">${esc(e.name)}</span>${
+                e.waited.length ? '<span class="d-stag blue" title="A written Flow has a precondition waiting for it">waited for</span>' : ''
+              }</button>`
+            )
+            .join('')
+        : ''
+    }`;
+  };
+  const area = (a) => {
+    // Unfolded by default: the Area of the open Flow or Flow to write, and on the Overview every Area with a Flow.
+    const open = EXPANDED.get(a.id) ?? (a.flows.includes(fid) || a.toWrite.some((e) => e.id === tw) || (!fid && a.flows.length > 0));
+    return `<div class="d-sarea">
+      <button class="d-sareah" data-area="${esc(a.id)}" aria-expanded="${open}">
+        <span class="d-chev ${open ? 'open' : ''}">›</span>
+        <span class="d-saname ${a.known ? '' : 'd-warn'}" ${a.known ? '' : `title="${a.id ? 'This Area is not in areas.yaml' : 'These Flows name no Area'}"`}>${esc(areaName(a.id))}</span>
+        <span class="d-scount">${a.flows.length}${a.toWrite.length ? ` · ${a.toWrite.length} to write` : ''}</span>
+      </button>
+      ${open ? `<div class="d-sflows">${a.flows.map(flowRow).join('')}${toWriteBlock(a)}${a.flows.length || a.toWrite.length ? '' : '<div class="d-snone">No Flow yet.</div>'}</div>` : ''}
+    </div>`;
+  };
+
+  return `<aside class="d-side" data-pane="side" data-key="side">
+    <div class="d-brand"><a class="d-logo" href="/"><i></i>Fledgy</a><span class="d-sl">/</span><span class="d-repo">${esc(DATA.repo.name)}</span></div>
+    <div class="d-search">
+      <label class="d-sbox">${icon('<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>')}
+        <input data-search placeholder="Search Flows, Parts…" value="${esc(SEARCH)}" autocomplete="off" spellcheck="false" aria-label="Search Flows, Flows to write and Parts" />
+        <kbd>⌘K</kbd></label>
+      ${searchList()}
+    </div>
+    <nav class="d-snav">
+      <a class="d-snavi ${page === 'overview' ? 'on' : ''}" href="/">${icon('<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>')}Overview</a>
+      <a class="d-snavi ${page === 'changes' ? 'on' : ''}" href="/?show=10">${icon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="6.5" r="1.5"/><path d="M4.5 5v6M11.5 8c0 2-2 2.5-5 3.5"/>')}Changes${
+        uncommitted ? `<span class="d-badge" title="${plural(uncommitted, 'Flow')} not committed">${uncommitted}</span>` : ''
+      }</a>
+    </nav>
+    <div class="d-lab d-slab">${term('area', 'Areas')}</div>
+    <div class="d-sareas">${areas.length ? areas.map(area).join('') : '<div class="d-snone">Nothing mapped yet.</div>'}</div>
+    <div class="d-sfoot"><div><i class="d-dot"></i>${term('live', 'Live from knowledge-base/')}</div><div class="d-mono dim" data-read>${readAgo()}</div></div>
+  </aside>`;
+}
+
+// A Flow to write, opened from the sidebar, the search or a precondition: what it is, who waits for it, how to write it.
+function twPopover() {
+  const e = toWrite().find((x) => x.id === q('tw'));
+  if (!e) return '';
+  const command = `/map-the-app Write the Flow ${e.name}`;
+  const waits = e.waited.map((fid) => {
+    const pre = (DATA.flows[fid].preconditions ?? []).find((p) => p?.flow_to_write === e.id);
+    return `<div>Waited for by <a class="d-chip sm" href="${esc(flowHref(fid))}">${esc(DATA.flows[fid].name)}</a>${pre?.so_that ? ` — “${esc(pre.so_that)}”` : ''}</div>`;
+  });
+  return `<div class="d-pop" role="dialog" aria-label="${esc(e.name)}, a Flow to write">
+    <div class="d-poph"><span class="d-lab">${term('towrite', 'Flow to write')} · ${esc(areaName(e.area))}</span><button class="d-x" ${set({ tw: null })} aria-label="Close">×</button></div>
+    <div class="d-popt">${esc(e.name)}</div>
+    ${e.is ? `<div class="d-popis">${esc(e.is)}</div>` : ''}
+    <div class="d-popw">${waits.join('') || 'No written Flow waits for it.'}</div>
+    <div class="d-popcmd"><span>To write it, in Claude Code type <code>${esc(command)}</code></span><button class="d-btn2" data-copy="${esc(command)}">Copy</button></div>
+  </div>`;
+}
+// The popover sits beside the sidebar, level with the entry it opened from when that entry is in view.
+function placePopover() {
+  const pop = document.querySelector('.d-pop');
+  if (!pop) return;
+  const from = document.querySelector('.d-stwe.on')?.getBoundingClientRect();
+  const top = from && from.bottom > 0 && from.top < innerHeight ? from.top - 40 : 120;
+  pop.style.top = `${Math.max(12, Math.min(top, innerHeight - pop.offsetHeight - 12))}px`;
+}
+
+// ---------- the former home page: Flows grouped by Area, with a preview ----------
+// Shown as the Overview and the Changes until their own pages are made.
 
 const FILTERS = [
   ['', 'All'],
@@ -187,8 +378,6 @@ function matching(show) {
 function home() {
   const flows = DATA.flows;
   const areas = DATA.areas;
-  const areaName = (aid) => areas[aid]?.name ?? (aid || 'No Area');
-  const TW = toWrite();
   const show = FILTERS.some(([k]) => k === q('show')) ? q('show') : '';
   const kept = matching(show);
   const scope = +show ? DATA.changes.recent.slice(0, +show) : [];
@@ -204,9 +393,9 @@ function home() {
     const f = flows[id];
     const on = pv === id;
     const last = changes(id).last;
-    return `<button class="d-row ${on ? 'on' : ''}" ${set(on ? { flow: id, pv: null, show: null, tw: null } : { pv: id })}>
+    return `<button class="d-row ${on ? 'on' : ''}" ${on ? `data-go="${esc(flowHref(id))}"` : set({ pv: id })}>
       <span class="d-rowt"><span>${esc(f.name)}</span>${changes(id).uncommitted ? `<span class="d-tag amber">${term('uncommitted', 'Not committed', true)}</span>` : ''}${qaChip(id, f.paths)}</span>
-      <span class="d-rowm">${esc(DATA.actors[f.actor]?.name ?? f.actor)} · ${plural(f.paths[0].steps.length, 'step')} · ${term('variant', plural(f.paths.length - 1, 'Variant'), true)}${last ? ` · changed ${esc(ago(last.date))}` : ''}</span>
+      <span class="d-rowm">${esc(actorName(f))} · ${plural(f.paths[0].steps.length, 'step')} · ${term('variant', plural(f.paths.length - 1, 'Variant'), true)}${last ? ` · changed ${esc(ago(last.date))}` : ''}</span>
       ${scope
         .filter((c) => c.flows.includes(id))
         .map((c) => `<span class="d-rowc">changed in <b>${esc(short(c))}</b> ${esc(c.subject)}</span>`)
@@ -238,29 +427,6 @@ function home() {
                   : `None of ${lastN} changed a Flow.`
         }</div>`;
 
-  // The Flows to write: one list of its own, across Areas. An entry opens in place, one at a time.
-  const backlog = TW.length
-    ? `<div class="d-tw">
-        <div class="d-area"><div class="d-lab">${term('towrite', 'To write')} · ${plural(TW.length, 'Flow')}</div>
-          <div class="d-areais">Flows the app has but nobody has written yet.</div></div>
-        <div class="d-backlog ${TW.some((e) => e.id === q('tw')) ? 'open' : ''}" data-pane="towrite" data-key="towrite">${TW.map((e) => {
-          const open = q('tw') === e.id;
-          return `<button class="d-bl ${open ? 'on' : ''}" ${set({ tw: open ? null : e.id })}>
-              <span class="d-blname">${esc(e.name)}</span><span class="d-tag">${esc(areaName(e.area))}</span><span class="d-caret">${open ? '▴' : '▾'}</span>
-            </button>${
-              open
-                ? `<div class="d-blopen"><div>${esc(e.is)}</div>
-                    <div class="d-blwait">${
-                      e.waited.length
-                        ? `Waited for by ${e.waited.map((fid) => `<a class="d-ref" href="/?flow=${encodeURIComponent(fid)}">${esc(flows[fid].name)}</a>`).join(' ')}`
-                        : 'No written Flow waits for it.'
-                    }</div></div>`
-                : ''
-            }`;
-        }).join('')}</div>
-      </div>`
-    : '';
-
   let preview;
   if (flows[pv]) {
     const f = flows[pv];
@@ -272,13 +438,13 @@ function home() {
           <div class="d-h2">${esc(f.name)}</div>
           <div class="d-lead">${esc(f.goal)}</div>
           <div class="d-chg">${uncommitted ? '<span class="d-warn">Has changes that are not committed.</span> ' : ''}${
-            last ? `Last commit to change it: <span class="d-mono">${esc(short(last))}</span> ${esc(last.subject)}, ${esc(ago(last.date))}.` : 'Never committed.'
+            last ? `Last commit to change it: <span class="d-mono">${esc(short(last))}</span> ${esc(last.subject)}, ${esc(ago(last.date))}.` : 'No commit has changed it.'
           }</div>
         </div>
-        <a class="d-btn" href="/?flow=${encodeURIComponent(pv)}">Open Flow →</a>
+        <a class="d-btn" href="${esc(flowHref(pv))}">Open Flow →</a>
       </div>
       <div class="d-table">
-        <div class="d-tr d-th"><div></div><div>${esc(DATA.actors[f.actor]?.name ?? f.actor)}</div><div>${term('system', 'System')}</div></div>
+        <div class="d-tr d-th"><div></div><div>${esc(actorName(f))}</div><div>${term('system', 'System')}</div></div>
         ${main.steps
           .map(
             (s, i) => `<div class="d-tr">
@@ -295,7 +461,7 @@ function home() {
           ? `<div class="d-lab d-gap">${term('variant', plural(variants.length, 'Variant'))}</div>
         <div class="d-table">${variants
           .map(
-            (p) => `<a class="d-vrow" href="/?flow=${encodeURIComponent(pv)}&path=${encodeURIComponent(p.id)}">
+            (p) => `<a class="d-vrow" href="${esc(flowHref(pv, { path: p.id }))}">
               <span class="d-vname">${esc(p.name)}</span>
               <span class="d-vwhen">${esc(p.when)}</span>
               <span class="d-rowm">${p.divergesAt == null ? '' : `leaves the main path at step ${p.divergesAt + 1}`}</span>
@@ -334,15 +500,10 @@ function home() {
 
   // With no Flow written there is nothing to filter, and no change to explain.
   const written = Object.keys(flows).length > 0;
-  const count = (things, word) => plural(Object.keys(things).length, word);
-  return `${bar(
-    [`<b>${esc(DATA.repo.name)}</b>`],
-    `<span class="d-mono dim">· ${count(flows, 'Flow')} · ${count(areas, 'Area')}${TW.length ? ` · ${TW.length} to write` : ''}</span>`
-  )}
-  <div class="d-home">
+  return `<div class="d-home">
     <div class="d-list">
       <div class="d-listhead">
-        <div class="d-h1">What the app does</div>
+        <div class="d-h1">${show ? 'Changes' : 'What the app does'}</div>
         <div class="d-lead">Every ${term('flow', 'Flow')} in the knowledge base, grouped by ${term('area', 'Area')}.</div>
       </div>
       ${
@@ -354,83 +515,136 @@ function home() {
       }
       ${
         show === 'uncommitted'
-          ? '<div class="d-scope">Flows with a file that is new or has changes, staged or not.</div>'
+          ? '<div class="d-scope">Flows whose code has changes that are not committed, staged or not.</div>'
           : scope.length
             ? `<div class="d-scope">Flows changed in ${lastN} on this branch, back to <span class="d-mono">${esc(short(scope.at(-1)))}</span> (${esc(ago(scope.at(-1).date))}).</div>`
             : ''
       }
       <div class="d-flows" data-pane="flows" data-key="${esc(show)}">
         ${list}
-        ${written ? '<div class="d-listfoot"><b>What counts as a change.</b> A Flow changed when its own file changed, or any code it points to. The Flows to write have no file yet, so the filters skip them.</div>' : ''}
+        ${written ? '<div class="d-listfoot"><b>What counts as a change.</b> A Flow changed when the code its Parts point to changed. Rewording the Flow doesn’t count: nothing changed in the app.</div>' : ''}
       </div>
-      ${backlog}
     </div>
     <div class="d-preview" data-pane="preview" data-key="${esc(pv ?? '')}">${preview}</div>
   </div>`;
 }
 
-// ---------- flow page ----------
+// ---------- the Flow page ----------
 
-function anchor(a) {
-  const [path, symbol] = a.at.split('#');
-  return `<div class="d-anchor"><span>${esc(a.label)}</span>
-    <a href="vscode://file/${encodeURI(DATA.repo.root + '/' + path)}" title="Open in VS Code">${esc(path)}${symbol ? `<b>#${esc(symbol)}</b>` : ''}</a></div>`;
+// A precondition is a sentence, or names the Flow that brings it about: one that is written, which it links to,
+// or one still to write, which opens its popover. A Flow that is neither shows its id.
+function precondition(pre) {
+  if (typeof pre === 'string') return `<div>${esc(pre)}</div>`;
+  const id = pre?.flow ?? pre?.flow_to_write;
+  const tw = toWrite().find((e) => e.id === id);
+  const named = DATA.flows[id]
+    ? `<a class="d-chip sm" href="${esc(flowHref(id))}" title="Open this Flow">${esc(DATA.flows[id].name)}</a>`
+    : tw
+      ? `<button class="d-chip sm dashed" data-tw="${esc(id)}" title="A Flow to write">${esc(tw.name)} · to write</button>`
+      : `<span class="d-chip sm dashed missing" title="No Flow and no Flow to write has this id">${esc(id)}</span>`;
+  return `<div>${esc(pre?.so_that)} ${named}</div>`;
 }
 
-// One row of the Parts container. Only the open Part shows its sentence and its Anchors; the others are a click away.
-function partRow(id, p, cur, open) {
+function anchor(a) {
+  const [file, symbol] = String(a.at ?? '').split('#');
+  return `<a class="d-anc" href="vscode://file/${encodeURI(DATA.repo.root + '/' + file)}" title="Open in VS Code">
+    <span class="d-ancl">${esc(a.label)}</span>
+    <span class="d-ancp">${a.side ? `${esc(a.side)} · ` : ''}${esc(file)}${symbol ? `<b>#${esc(symbol)}</b>` : ''}</span>
+  </a>`;
+}
+
+// The open Part of a Step: its sentence on the left, where it lives in the code on the right.
+function partPanel(id, p, i) {
   const part = DATA.parts[id];
-  const sec = `data-sec="part:${esc(id)}"`;
-  if (!part) return `<div class="d-prow" ${sec}><span class="d-mono">${esc(id)}</span><span class="d-warn">No file at parts/${esc(id)}.yaml</span></div>`;
-  const head = `<span class="d-pname">${esc(part.name)}</span>${part.entity ? `<span class="d-tag">${term('entity', 'Entity', id !== open)}</span>` : ''}`;
-  if (id !== open)
-    return `<button class="d-prow" ${sec} data-in="left" data-goto="part:${esc(id)}" ${set({ part: id, dp: null })}>${head}<span class="d-pteaser">${esc(part.is)}</span><span class="d-caret">Show ▾</span></button>`;
-  const shown = q('dp') != null;
-  const by = (side) => (part.anchors ?? []).filter((a) => a.side === side);
-  const sided = [['screen', 'Screen'], ['backend', 'Backend']].filter(([k]) => by(k).length);
-  const also = p.steps.map((s, j) => j).filter((j) => j !== cur && (p.steps[j].parts ?? []).includes(id));
-  return `<div class="d-popen" ${sec}>
-    <div class="d-partb">
-      <div class="d-parth">${head}
-        ${also.length ? `<span class="d-also">also in step ${also.map((j) => `<button ${set({ step: j, part: id, dp: null })}>${j + 1}</button>`).join(' ')}</span>` : ''}</div>
+  const also = p.steps.map((s, j) => j).filter((j) => j !== i && (p.steps[j].parts ?? []).includes(id));
+  return `<div class="d-ppanel">
+    <div class="d-ppl">
+      <div class="d-ppname">${esc(part.name ?? id)}${part.entity ? `<span class="d-tag">${term('entity', 'Entity')}</span>` : ''}</div>
       <div class="d-pis">${esc(part.is)}</div>
-      ${part.relations ? `<div class="d-prel">${part.relations.map(esc).join(' · ')}</div>` : ''}
+      ${part.relations?.length ? `<ul class="d-prel">${part.relations.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+      ${also.length ? `<div class="d-palso">Also in step ${also.map((j) => `<button ${set({ step: j, part: id })}>${j + 1}</button>`).join(', ')}</div>` : ''}
     </div>
-    <button class="d-atoggle" ${set({ dp: shown ? null : 1 })}>${term('anchor', 'Where it lives in the code', true)}
-      <span class="d-mono dim">${sided.map(([k]) => `${by(k).length} ${k}`).join(' · ')}</span><span class="d-caret">${shown ? 'Hide ▴' : 'Show ▾'}</span></button>
-    ${shown ? `<div class="d-anchs">${sided.map(([k, label]) => `<div class="d-aside"><div class="d-lab">${label}</div>${by(k).map(anchor).join('')}</div>`).join('')}</div>` : ''}
+    <div class="d-ppr">
+      <div class="d-lab">${term('anchor', 'Where it lives in the code')} · opens in VS Code</div>
+      ${(part.anchors ?? []).map(anchor).join('') || '<div class="d-none">No Anchor.</div>'}
+    </div>
   </div>`;
 }
 
-// The table of contents of one pane. It floats over the other pane while this one is being scrolled.
-function toc(pane, title, entries) {
-  return `<div class="d-toc" data-toc="${pane}"><div class="d-lab">${esc(title)}</div>${entries
-    .map((x) => `<button data-in="${pane}" data-goto="${esc(x.sec)}" ${x.set ? set(x.set) : ''}>${x.html}</button>`)
-    .join('')}</div>`;
+function stepRow(fid, P, p, s, i, cur) {
+  const on = i === cur;
+  const parts = s.parts ?? [];
+  const open = on && parts.includes(q('part')) ? q('part') : null;
+  const chips = parts
+    .map((id) => {
+      const part = DATA.parts[id];
+      if (!part) return `<span class="d-chip missing" title="No file at parts/${esc(id)}.yaml">${esc(id)}</span>`;
+      const isOpen = id === open;
+      return `<button class="d-chip ${isOpen ? 'on' : ''}" ${set({ step: i, part: isOpen ? null : id })} aria-expanded="${isOpen}">${esc(part.name ?? id)}${
+        part.entity ? `<span class="d-ent">${term('entity', 'Entity', true)}</span>` : ''
+      }<span class="d-caret">${isOpen ? '▴' : '▾'}</span></button>`;
+    })
+    .join('');
+  // On the main path, the Variants that leave it at this Step.
+  const leaving = p.id === 'main' ? P.slice(1).filter((v) => v.divergesAt === i) : [];
+  const tag = s.shared
+    ? '<span class="d-tag">Same as main path</span>'
+    : i === p.divergesAt
+      ? `<span class="d-tag blue">${term('leaves', 'Leaves the main path')}</span><span class="d-swhen">when ${esc(p.when)}</span>`
+      : '';
+  return `<div class="d-step ${on ? 'on' : ''} ${s.shared ? 'shared' : ''}" data-step="${i}">
+    <button class="d-snum" ${set({ step: i, part: null })} aria-label="Step ${i + 1}">${i + 1}</button>
+    <div class="d-smain">
+      ${tag ? `<div class="d-stags">${tag}</div>` : ''}
+      ${sides(s)}
+    </div>
+    <div class="d-ssys ${s.system ? '' : 'empty'}"><div class="d-lab">${term('system', 'System')}</div><div>${esc(s.system ?? 'Nothing.')}</div></div>
+    <div class="d-sparts">
+      ${
+        leaving.length
+          ? `<div class="d-leaving">${term('variant', leaving.length === 1 ? 'A Variant' : 'Variants')} ${leaving.length === 1 ? 'leaves' : 'leave'} here: ${leaving
+              .map((v) => `<button class="d-vlink" ${set({ path: v.id, step: i, part: null })}>${esc(v.name)}</button>`)
+              .join(', ')}</div>`
+          : ''
+      }
+      ${parts.length ? `<div class="d-chips"><span class="d-lab">${term('part', 'Parts')}</span>${chips}</div>` : '<div class="d-none">No Part in this step.</div>'}
+    </div>
+    ${open ? partPanel(open, p, i) : ''}
+  </div>`;
 }
 
-// A precondition is a sentence, or names the Flow that brings it about: one that has a file, or one still to write,
-// which links to its entry on the home page. The Flow shows by its name; only one that is nowhere shows its id.
-function precondition(pre) {
-  if (typeof pre === 'string') return `<li>${esc(pre)}</li>`;
-  const id = pre.flow ?? pre.flow_to_write;
-  const name = esc(DATA.flows[id]?.name ?? toWrite().find((e) => e.id === id)?.name ?? id);
-  return `<li>${esc(pre.so_that)} ${
-    DATA.flows[id]
-      ? `<a class="d-ref d-named" title="Open this Flow" href="/?flow=${encodeURIComponent(id)}">${name}</a>`
-      : pre.flow_to_write
-        ? `<a class="d-ref d-named missing" title="A Flow to write: see it on the home page" href="/?tw=${encodeURIComponent(id)}">${name} · not written</a>`
-        : `<span class="d-ref missing" title="No Flow file with this id yet">${name}</span>`
-  }</li>`;
+// The paths of the Flow, each a card: on "Read the Flow" its Steps, on "Check by hand" its results.
+function pathCard(fid, P, x, p, check) {
+  const t = tally(fid, [x]);
+  const own = x.steps.filter((s) => !s.shared).length;
+  const badge = t.failed
+    ? `<span class="d-pbadge failed">${t.failed} failed</span>`
+    : `<span class="d-pbadge ${t.all && t.passed === t.all ? 'passed' : ''}">${t.passed}/${t.all}</span>`;
+  const summary = t.failed
+    ? `<span class="d-st s-failed">${t.failed} failed</span>`
+    : t.all && t.passed === t.all
+      ? '<span class="d-st s-passed">all passed</span>'
+      : t['not-checked'] === t.all
+        ? 'not started'
+        : `${t.passed}/${t.all} passed`;
+  const sub = check
+    ? `<span class="d-pcheck">${squares(fid, x)}${summary}</span>`
+    : x.id === 'main'
+      ? `<span class="d-psub">${plural(x.steps.length, 'step')} · ${esc(x.outcome)}</span>`
+      : `<span class="d-pmeta">${x.divergesAt == null ? '<span class="d-warn">leaves at a step the main path does not have</span>' : `leaves at step ${x.divergesAt + 1}`} · ${plural(own, 'step')}</span>`;
+  return `<button class="d-pcard ${x.id === p.id ? 'on' : ''}" ${set({ path: x.id === 'main' ? null : x.id, step: null, part: null })}>
+    <span class="d-ptitle"><span>${x.id === 'main' ? term('mainpath', esc(x.name), true) : esc(x.name)}</span>${check ? '' : badge}</span>
+    ${sub}
+  </button>`;
 }
 
 // What has happened to the Flow since the results on this path were recorded: the result with the most to say.
 // A change never clears a result: the Builder is told, and decides whether to reset.
 function changedSince(fid, p) {
-  const moved = p.qa.steps.map((qs) => result(fid, p, qs).since).filter((c) => c && (c.commits.length || c.uncommitted));
-  if (!moved.length) return null;
-  const most = moved.reduce((a, b) => (b.commits.length > a.commits.length ? b : a));
-  return { commits: most.commits, byDate: most.byDate, uncommitted: moved.some((c) => c.uncommitted) };
+  const since = p.qa.steps.map((qs) => result(fid, p, qs).since).filter((c) => c && (c.commits.length || c.uncommitted));
+  if (!since.length) return null;
+  const most = since.reduce((a, b) => (b.commits.length > a.commits.length ? b : a));
+  return { commits: most.commits, byDate: most.byDate, uncommitted: since.some((c) => c.uncommitted) };
 }
 
 function sinceBanner(c) {
@@ -438,12 +652,12 @@ function sinceBanner(c) {
   const text = n
     ? `${plural(n, 'commit')} ${n === 1 ? 'has' : 'have'} changed this Flow since this path was checked${c.uncommitted ? ', and it has changes that are not committed yet' : ''}.`
     : 'This Flow has changes that are not committed yet, made after this path was checked.';
-  return `<div class="d-since" data-sec="since">
+  return `<div class="d-since">
     <div class="d-lab">Changed since the last check</div>
     <div>${text}</div>
     ${n ? `<div>${c.commits.map(commitRow).join('')}</div>` : ''}
     ${n && c.byDate ? '<div class="d-sincef d-warn">The commit the check was recorded on is not in this branch’s history, so these are the commits made after the date of the check.</div>' : ''}
-    <div class="d-sincef">A commit changes a Flow when it touches the Flow’s file, the file of a Part it names, or code one of those Parts’ Anchors points into. The results are kept as they are. Record a step again once you have looked, or reset them if they no longer hold.</div>
+    <div class="d-sincef">A commit changes a Flow when it changes the code one of its Parts points to. The results are kept as they are. Record a step again once you have looked, or reset them if they no longer hold.</div>
   </div>`;
 }
 
@@ -456,7 +670,7 @@ function qaStep(fid, p, qs, i) {
   ]
     .filter(Boolean)
     .join(' and ');
-  return `<div class="d-card d-check s-${r.state}" data-sec="qa:${i}">
+  return `<div class="d-card d-check s-${r.state}">
     <div class="d-checkh"><span class="d-num">${i + 1}</span><span class="d-st s-${r.state}">${STATE_LINE[r.state]}</span></div>
     <div class="d-dx">
       <span>Do</span><div class="d-do">${esc(qs.do)}</div>
@@ -469,187 +683,109 @@ function qaStep(fid, p, qs, i) {
     }
     ${
       r.state !== 'not-checked'
-        ? `<div class="d-rec" title="${esc(new Date(r.date).toLocaleString())} · ${esc(r.commit)}">Recorded ${ago(r.date)} on ${esc(r.commit.slice(0, 7))}${r.uncommitted ? ' · <span class="d-warn">with changes to this Flow that were not committed</span>' : ''}${after ? ` · <span class="d-warn">${after}</span>` : ''}</div>
+        ? `<div class="d-rec" title="${esc(new Date(r.date).toLocaleString())} · ${esc(r.commit)}">Recorded ${ago(r.date)}${r.uncommitted ? ' · <span class="d-warn">with changes to this Flow that were not committed</span>' : ''}${after ? ` · <span class="d-warn">${after}</span>` : ''}</div>
     <textarea data-note="${ref}" rows="2" placeholder="Optional note about what you saw">${esc(r.note)}</textarea>`
         : ''
     }
   </div>`;
 }
 
-function flowPage(fid) {
-  const f = DATA.flows[fid];
-  const a = DATA.actors[f.actor];
-  const area = DATA.areas[areaOf(fid)];
-  const P = f.paths;
-  const p = P.find((x) => x.id === q('path')) ?? P[0];
-  const cur = Math.min(Math.max(+(q('step') ?? p.divergesAt ?? 0) || 0, 0), p.steps.length - 1);
-  const s = p.steps[cur];
-  const actorName = a?.name ?? f.actor;
-  const parts = s.parts ?? [];
-  const open = parts.includes(q('part')) ? q('part') : parts[0];
+function checkByHand(fid, p) {
   const t = tally(fid, [p]);
   const since = changedSince(fid, p);
-  const { uncommitted, last } = changes(fid);
   const tallyLine = [['passed', 'passed'], ['failed', 'failed'], ['could-not-perform', 'could not perform'], ['not-checked', 'not checked']]
     .filter(([k]) => t[k])
     .map(([k, label]) => `<span class="d-st s-${k}">${t[k]} ${label}</span>`)
     .join('<span class="dim"> · </span>');
-
-  const strip = p.steps
-    .map(
-      (st, i) => `<button class="d-cell ${i === cur ? 'on' : ''} ${st.shared ? 'shared' : ''}" ${set({ step: i, part: null, dp: null })}>
-        <span class="d-cellh"><span class="d-num">${i + 1}</span>
-          ${st.shared ? '<span class="d-tag">Same as main path</span>' : i === p.divergesAt ? `<span class="d-tag blue">${term('leaves', 'Leaves the main path', true)}</span>` : ''}</span>
-        <span class="d-cellt">${esc(st.does ?? st.sees ?? st.system)}</span>
-        <span class="d-who"><i class="${st.does ? 'y' : ''}">Does</i><i class="${st.sees ? 'y' : ''}">Sees</i><i class="${st.system ? 'y' : ''}">System</i><i class="y">${plural((st.parts ?? []).length, 'Part')}</i></span>
-      </button>`
-    )
-    .join('');
-
-  return `${bar(
-    [
-      `<a class="d-crumb" href="/?pv=${encodeURIComponent(fid)}">${esc(DATA.repo.name)} · Home</a>`,
-      `<span class="d-crumbx">${esc(area?.name ?? (areaOf(fid) || 'No Area'))}</span>`,
-      `<b>${esc(f.name)}</b>`,
-    ],
-    `${uncommitted ? '<span class="d-warn">· changes not committed</span>' : ''}<span class="d-mono dim">· ${
-      last ? `last commit to change it ${esc(short(last))}, ${esc(ago(last.date))}` : 'never committed'
-    }</span>`
-  )}
-  <div class="d-page">
-    <div>
-      <div class="d-h1 small">${esc(f.name)}</div>
-      <div class="d-lead">${esc(f.goal)}</div>
-    </div>
-    <div class="d-factgrid">
-      <div class="d-fact"><div class="d-lab">${term('actor', 'Actor')}</div><div><b>${esc(actorName)}</b></div><div class="d-sub">${esc(a?.is ?? '')}</div></div>
-      <div class="d-fact"><div class="d-lab">${term('trigger', 'Trigger')}</div><div>${esc(f.trigger)}</div></div>
-      <div class="d-fact"><div class="d-lab">Before it starts</div><ul>${(f.preconditions ?? []).map(precondition).join('')}</ul></div>
-    </div>
-
-    <div class="d-paths">${P.map(
-      (x) => `<button class="d-path ${x.id === p.id ? 'on' : ''}" ${set({ path: x.id === 'main' ? null : x.id, step: null, part: null, dp: null })}>${x.id === 'main' ? term('mainpath', esc(x.name), true) : esc(x.name)}${qaChip(fid, [x])}</button>`
-    ).join('')}</div>
-    <div class="d-banner">${
-      p.id === 'main'
-        ? `<span class="d-lab">Outcome</span><span>${esc(p.outcome)}</span>`
-        : `<span class="d-lab blue">${term('variant', 'Variant')}</span><span>${esc(p.when)}</span><span class="d-lab">Outcome</span><span>${esc(p.outcome)}</span>
-           <span class="d-bannerr">${
-             p.divergesAt == null
-               ? '<span class="d-warn">Diverges at a Step the main path does not have</span>'
-               : `Leaves the main path at step ${p.divergesAt + 1}`
-           }</span>`
+  return `<div class="d-qapane">
+    <div class="d-qah"><span class="d-lab">${term('qa', 'Manual QA Check')} · ${esc(p.name)}</span><span class="d-tally">${tallyLine}</span>${
+      t['not-checked'] < t.all ? `<button class="d-link" data-reset="${esc(JSON.stringify({ flow: fid, path: p.id }))}">Reset results</button>` : ''
     }</div>
+    ${REFUSED ? `<div class="d-rec d-warn">Not recorded: ${esc(REFUSED)}</div>` : ''}
+    ${since ? sinceBanner(since) : ''}
+    <div class="d-card"><div class="d-lab">${term('prepare', 'Prepare')}</div><ol class="d-setup">${p.qa.setup.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></div>
+    ${p.qa.steps.map((qs, i) => qaStep(fid, p, qs, i)).join('')}
+    ${DATA.resultsFile ? '' : '<div class="d-rec d-warn">Results cannot be recorded yet: they need a git repo with at least one commit.</div>'}
+  </div>`;
+}
 
-    <div class="d-strip">${strip}</div>
+// The Step a path opens on: a Variant's first Step of its own, the main path's first.
+const startStep = (p) => p.divergesAt ?? 0;
+function currentStep(p) {
+  const n = Number.parseInt(q('step') ?? '', 10);
+  return Number.isInteger(n) && n >= 0 && n < p.steps.length ? n : startStep(p);
+}
 
-    <div class="d-cols" data-focus="${FOCUS ?? ''}">
-      <div class="d-col d-colL">
-        <div class="d-pane d-left" data-pane="left" data-key="${esc(`${fid}|${p.id}|${cur}`)}">
-          <div class="d-qah" data-sec="step">
-            <span class="d-lab">Step ${cur + 1} of ${p.steps.length}${s.shared ? ' · same as the main path' : ''}</span>
-            <span class="d-nav">
-              ${cur > 0 ? `<button class="d-btn2" ${set({ step: cur - 1, part: null, dp: null })}>← Step ${cur}</button>` : ''}
-              ${cur < p.steps.length - 1 ? `<button class="d-btn2" ${set({ step: cur + 1, part: null, dp: null })}>Step ${cur + 2} →</button>` : ''}
-            </span>
-          </div>
-          <div class="d-sides">
-            <div class="d-box"><div class="d-lab">${esc(actorName)}</div>${sides(s)}</div>
-            <div class="d-box"><div class="d-lab">${term('system', 'System')}</div><div class="d-sys ${s.system ? '' : 'd-none'}">${esc(s.system ?? 'Nothing.')}</div></div>
-          </div>
-          <div class="d-parts">
-            <div class="d-lab">${term('part', plural(parts.length, 'Part'))} in this step</div>
-            ${parts.map((id) => partRow(id, p, cur, open)).join('')}
-          </div>
-        </div>
-        ${toc('right', `Manual QA Check · ${p.name}`, [
-          ...(since ? [{ sec: 'since', html: '<span class="d-toct d-warn">Changed since the last check</span>' }] : []),
-          { sec: 'prepare', html: '<span class="d-toct">Prepare</span>' },
-          ...p.qa.steps.map((qs, i) => {
-            const st = result(fid, p, qs).state;
-            return { sec: `qa:${i}`, html: `<span class="d-num">${i + 1}</span><span class="d-toct">${esc(qs.do)}</span>${st === 'not-checked' ? '' : `<span class="d-st s-${st}">${STATE_LINE[st][0]}</span>`}` };
-          }),
-        ])}
+function flowPage(fid) {
+  const f = DATA.flows[fid];
+  const actor = DATA.actors[f.actor];
+  const P = f.paths;
+  const p = P.find((x) => x.id === q('path')) ?? P[0];
+  const check = q('tab') === 'check';
+  const cur = currentStep(p);
+  const { uncommitted, last } = changes(fid);
+  const order = flowOrder();
+  const at = order.indexOf(fid);
+  const [prev, next] = [order[at - 1], order[at + 1]];
+  const navBtn = (id, label) =>
+    id ? `<a class="d-btn2" href="${esc(flowHref(id))}" title="${esc(DATA.flows[id].name)}">${label}</a>` : `<span class="d-btn2 off">${label}</span>`;
+  const t = tally(fid, P);
+  const variants = P.slice(1);
+
+  return `<div class="d-flow">
+    <div class="d-fhead">
+      <div class="d-ftitle">
+        <div class="d-fcrumb">${esc(areaName(areaOf(fid)))}</div>
+        <h1 class="d-h1">${esc(f.name)}</h1>
+        <div class="d-lead">${esc(f.goal)}</div>
       </div>
-
-      <div class="d-col d-colR">
-        <div class="d-pane d-right" data-pane="right" data-key="${esc(`${fid}|${p.id}`)}">
-          <div class="d-qah"><span class="d-lab">${term('qa', 'Manual QA Check')} · ${esc(p.name)}</span>${t['not-checked'] < t.all ? `<button class="d-link" data-reset="${esc(JSON.stringify({ flow: fid, path: p.id }))}">Reset results</button>` : ''}</div>
-          <div class="d-tally">${tallyLine}</div>
-          ${REFUSED ? `<div class="d-rec d-warn">Not recorded: ${esc(REFUSED)}</div>` : ''}
-          ${since ? sinceBanner(since) : ''}
-          <div class="d-card" data-sec="prepare"><div class="d-lab">${term('prepare', 'Prepare')}</div><ol class="d-setup">${p.qa.setup.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></div>
-          ${p.qa.steps.map((qs, i) => qaStep(fid, p, qs, i)).join('')}
-          <div class="d-rec">${
-            DATA.resultsFile
-              ? `Your results are yours alone and stay on this machine, outside the repo: <span class="d-file">${esc(DATA.resultsFile)}</span>`
-              : 'Results cannot be recorded yet: they need a git repo with at least one commit.'
-          }</div>
-        </div>
-        ${toc('left', `Step ${cur + 1}`, [
-          { sec: 'step', html: `<span class="d-toct">${esc(actorName)} and System</span>` },
-          ...parts.map((id) => ({
-            sec: `part:${id}`,
-            set: id === open ? null : { part: id, dp: null },
-            html: `<span class="d-toct">${esc(DATA.parts[id]?.name ?? id)}</span>${id === open ? '<span class="d-mono dim">open</span>' : ''}`,
-          })),
-        ])}
+      <div class="d-fnav">${navBtn(prev, `← ${prev ? esc(DATA.flows[prev].name) : 'Previous'}`)}${navBtn(next, `${next ? esc(DATA.flows[next].name) : 'Next'} →`)}</div>
+    </div>
+    <div class="d-facts">
+      <div class="d-fact"><div class="d-lab">${term('actor', 'Actor')}</div><div class="d-clamp" ${actor?.is ? `title="${esc(actor.is)}"` : ''}><b>${esc(actorName(f))}</b>${actor?.is ? `<span class="dim"> · ${esc(actor.is)}</span>` : ''}</div></div>
+      <div class="d-fact"><div class="d-lab">${term('trigger', 'Trigger')}</div><div>${esc(f.trigger)}</div></div>
+      <div class="d-fact"><div class="d-lab">Before it starts</div>${(f.preconditions ?? []).map(precondition).join('') || '<div class="d-none">Nothing.</div>'}</div>
+    </div>
+    <div class="d-tabs" role="tablist">
+      <button class="d-tab ${check ? '' : 'on'}" role="tab" aria-selected="${!check}" ${set({ tab: null })}>Read the Flow<kbd>R</kbd></button>
+      <button class="d-tab ${check ? 'on' : ''}" role="tab" aria-selected="${check}" ${set({ tab: 'check' })}>Check by hand${squares(fid, p)}<kbd>C</kbd></button>
+      <span class="d-tabr">${
+        check
+          ? `<span ${DATA.resultsFile ? `title="${esc(DATA.resultsFile)}"` : ''}>Results stay on this machine, outside the repo</span>`
+          : `${uncommitted ? `<span class="d-warn">${term('uncommitted', 'changes not committed')}</span> · ` : ''}${
+              last ? `last commit to change it <span title="${esc(last.sha)} ${esc(last.subject)}">${esc(short(last))}</span> · ${esc(ago(last.date))}` : 'no commit has changed it'
+            }`
+      }</span>
+    </div>
+    <div class="d-fbody">
+      <div class="d-pathcol" data-pane="paths" data-key="${esc(fid)}">
+        ${pathCard(fid, P, P[0], p, check)}
+        ${variants.length ? `<div class="d-lab d-vlab">${term('variant', 'Variants')} · ${variants.length}</div>${variants.map((x) => pathCard(fid, P, x, p, check)).join('')}` : ''}
+        ${
+          check
+            ? `<div class="d-pfoot">This Flow · ${[['passed', 'passed'], ['failed', 'failed'], ['could-not-perform', 'could not perform'], ['not-checked', 'not checked']]
+                .filter(([k]) => t[k])
+                .map(([k, label]) => `${t[k]} ${label}`)
+                .join(' · ')}</div>`
+            : ''
+        }
+      </div>
+      <div class="d-content" data-pane="content" data-key="${esc(`${fid}|${p.id}|${check}`)}">
+        ${
+          check
+            ? checkByHand(fid, p)
+            : `${p.id !== 'main' && p.divergesAt == null ? `<div class="d-vbanner"><span class="d-lab blue">${term('variant', 'Variant')}</span><span>${esc(p.when)}</span><span class="d-warn">It leaves at a Step the main path does not have.</span></div>` : ''}
+               ${p.steps.map((s, i) => stepRow(fid, P, p, s, i, cur)).join('')}
+               <div class="d-outcome"><span class="d-lab green">Outcome</span><span>${esc(p.outcome)}</span></div>`
+        }
       </div>
     </div>
   </div>`;
 }
 
-// ---------- the two panes of the flow page ----------
-
-let FOCUS = null; // the pane being scrolled, "left" or "right": the other one is blurred and carries its table of contents
-let focusTimer;
-let quiet = false; // true while the page itself moves a pane, so that is not taken for the Builder scrolling
-const pane = (name) => document.querySelector(`[data-pane="${name}"]`);
-function hush() {
-  quiet = true;
-  requestAnimationFrame(() => requestAnimationFrame(() => (quiet = false)));
-}
-
-// The blur lasts while the pane is being scrolled, a little longer, and for as long as the pointer is on the table of contents.
-function setFocus(name) {
-  FOCUS = name;
-  const cols = document.querySelector('.d-cols');
-  if (cols) cols.dataset.focus = name ?? '';
-  clearTimeout(focusTimer);
-  if (name)
-    focusTimer = setTimeout(function idle() {
-      if (document.querySelector('.d-toc:hover')) focusTimer = setTimeout(idle, 500);
-      else setFocus(null);
-    }, 2200);
-}
-
-// Mark, in a pane's table of contents, the section the pane is on: the last one to have started in its upper part.
-function spy(name) {
-  const el = pane(name);
-  const entries = document.querySelectorAll(`[data-toc="${name}"] [data-goto]`);
-  if (!el || !entries.length) return;
-  const secs = [...el.querySelectorAll('[data-sec]')];
-  const top = el.getBoundingClientRect().top;
-  let cur = secs.findLast((x) => x.getBoundingClientRect().top - top <= el.clientHeight * 0.4) ?? secs[0];
-  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 2 && el.scrollTop > 0) cur = secs.at(-1);
-  for (const b of entries) b.classList.toggle('cur', b.dataset.goto === cur?.dataset.sec);
-}
-
-function goTo(name, sec, smooth) {
-  const el = pane(name);
-  const target = el?.querySelector(`[data-sec="${sec}"]`);
-  if (!target) return;
-  const top = target.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 2;
-  if (smooth) return el.scrollTo({ top, behavior: 'smooth' });
-  // A Part opened by a click is only brought back into view if opening it pushed it out of the pane.
-  if (top < el.scrollTop || top > el.scrollTop + el.clientHeight - 120) {
-    hush();
-    el.scrollTop = top;
-  }
-}
-
 // ---------- wiring ----------
 
+let SHOWN = {}; // what the last render showed, to tell a new Step or path from a redraw
 function render() {
   const app = document.getElementById('app');
   if (DATA.error) {
@@ -658,25 +794,69 @@ function render() {
   }
   // Redrawing replaces the panes, so each keeps its scroll position as long as it still shows the same thing.
   const kept = Object.fromEntries([...document.querySelectorAll('[data-pane]')].map((el) => [el.dataset.pane, { key: el.dataset.key, top: el.scrollTop }]));
-  const fid = q('flow');
-  document.title = `Fledgy · ${DATA.repo.name}`;
+  const searching = document.activeElement?.matches?.('[data-search]');
+  const fid = DATA.flows[q('flow')] ? q('flow') : null;
+  document.title = fid ? `${DATA.flows[fid].name} · Fledgy` : `Fledgy · ${DATA.repo.name}`;
   hideTip();
-  app.innerHTML = DATA.flows[fid] ? flowPage(fid) : home();
-  hush();
+  app.innerHTML = `<div class="d-shell">${sidebar(fid)}<main class="d-main">${fid ? flowPage(fid) : home()}</main></div>${twPopover()}`;
   for (const el of document.querySelectorAll('[data-pane]')) if (kept[el.dataset.pane]?.key === el.dataset.key) el.scrollTop = kept[el.dataset.pane].top;
-  // A Flow to write reached from a Flow's precondition may sit below the fold of its list.
-  for (const el of document.querySelectorAll('.d-bl.on, .d-bl.on + .d-blopen')) el.scrollIntoView({ block: 'nearest' });
-  if (FOCUS && !pane(FOCUS)) setFocus(null);
-  if (FOCUS) spy(FOCUS);
+  if (searching) {
+    const input = app.querySelector('[data-search]');
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+  placePopover();
+  // A Step chosen elsewhere than in view is brought into it; a path opened on a Variant starts where it leaves.
+  const step = document.querySelector('.d-step.on');
+  const shown = fid && { path: `${fid}|${q('path')}|${q('tab')}`, step: q('step') };
+  if (step && shown && (shown.path !== SHOWN.path || shown.step !== SHOWN.step)) {
+    if (shown.path === SHOWN.path) step.scrollIntoView({ block: 'nearest' });
+    else if (+step.dataset.step > 0) step.scrollIntoView({ block: 'start' });
+  }
+  SHOWN = shown || {};
+}
+
+function openToWrite(id) {
+  const e = toWrite().find((x) => x.id === id);
+  if (!e) return;
+  // The sidebar unfolds to the entry, so the popover can sit level with it.
+  EXPANDED.delete(e.area);
+  TWOPEN.delete(e.area);
+  clearSearch();
+  setQ({ tw: q('tw') === id ? null : id });
 }
 
 document.addEventListener('click', async (e) => {
-  // A click on the blurred side, anywhere but its table of contents, brings it back.
-  if (FOCUS && e.target.matches('.d-col')) return setFocus(null);
-  const t = e.target.closest('[data-goto],[data-set],[data-result],[data-reset]');
+  // A click outside the popover closes it, and one outside the search closes its results.
+  if (q('tw') && !e.target.closest('.d-pop, [data-tw]')) setQ({ tw: null });
+  if (SEARCH && !e.target.closest('.d-search')) {
+    clearSearch();
+    showSearch();
+  }
+  const a = e.target.closest('a[href^="/"]');
+  if (a && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
+    e.preventDefault();
+    if (a.matches('[data-found]')) clearSearch();
+    return go(a.getAttribute('href'));
+  }
+  const t = e.target.closest('[data-set],[data-go],[data-result],[data-reset],[data-area],[data-twlist],[data-tw],[data-copy]');
   if (!t) return;
+  if (t.dataset.area != null) {
+    const open = t.getAttribute('aria-expanded') === 'true';
+    EXPANDED.set(t.dataset.area, !open);
+    return render();
+  }
+  if (t.dataset.twlist != null) {
+    TWOPEN.set(t.dataset.twlist, !t.matches('.open'));
+    return render();
+  }
+  if (t.dataset.tw != null) return openToWrite(t.dataset.tw);
+  if (t.dataset.copy != null) {
+    const done = () => (t.textContent = 'Copied');
+    return navigator.clipboard?.writeText(t.dataset.copy).then(done, () => (t.textContent = 'Select and copy it'));
+  }
+  if (t.dataset.go) return go(t.dataset.go);
   if (t.dataset.set) setQ(JSON.parse(t.dataset.set));
-  if (t.dataset.goto) goTo(t.dataset.in, t.dataset.goto, !!t.closest('.d-toc'));
   if (t.dataset.reset) await post('/api/result-reset', JSON.parse(t.dataset.reset));
   else if (t.dataset.result) {
     // Read the note from the page: a click on a state can land before the note's own change is saved.
@@ -690,27 +870,69 @@ document.addEventListener('change', (e) => {
   if (e.target.matches('textarea[data-note]')) post('/api/note', { ...JSON.parse(e.target.dataset.note), note: e.target.value });
 });
 
-// Scroll events do not bubble, hence the capture.
-document.addEventListener(
-  'scroll',
-  (e) => {
-    const name = e.target.dataset?.pane;
-    if ((name !== 'left' && name !== 'right') || quiet) return;
-    setFocus(name);
-    spy(name);
-  },
-  true
-);
-// Scrolling over the blurred side hands it the wheel back.
-document.addEventListener('wheel', (e) => FOCUS && e.target.matches?.('.d-col') && setFocus(null), { passive: true });
-document.addEventListener('keydown', (e) => e.key === 'Escape' && (setFocus(null), hideTip()));
+// The search shows its results as the Builder types, without redrawing the page.
+document.addEventListener('input', (e) => {
+  if (!e.target.matches('[data-search]')) return;
+  SEARCH = e.target.value;
+  SEARCH_AT = 0;
+  showSearch();
+});
+
+document.addEventListener('keydown', (e) => {
+  const search = document.querySelector('[data-search]');
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    search?.focus();
+    search?.select();
+    return;
+  }
+  if (e.target === search) {
+    const found = document.querySelectorAll('[data-found]');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      SEARCH_AT = Math.max(0, Math.min(found.length - 1, SEARCH_AT + (e.key === 'ArrowDown' ? 1 : -1)));
+      showSearch();
+    } else if (e.key === 'Enter') found[SEARCH_AT]?.click();
+    else if (e.key === 'Escape') {
+      clearSearch();
+      search.value = '';
+      showSearch();
+      search.blur();
+    }
+    return;
+  }
+  if (e.key === 'Escape') {
+    hideTip();
+    if (q('tw')) setQ({ tw: null });
+    return;
+  }
+  // The keys of the Flow page, unless a note is being typed.
+  if (e.target.closest?.('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey) return;
+  const fid = DATA?.flows?.[q('flow')] ? q('flow') : null;
+  if (!fid) return;
+  const key = e.key.toLowerCase();
+  if (key === 'r') setQ({ tab: null });
+  else if (key === 'c') setQ({ tab: 'check' });
+  else if ((key === 'j' || key === 'k') && q('tab') !== 'check') {
+    const P = DATA.flows[fid].paths;
+    const p = P.find((x) => x.id === q('path')) ?? P[0];
+    const step = Math.max(0, Math.min(p.steps.length - 1, currentStep(p) + (key === 'j' ? 1 : -1)));
+    setQ({ step, part: null });
+  }
+});
+addEventListener('resize', placePopover);
 
 // Read again on load and whenever the window comes back to the front, so an edit, a stage or a commit made elsewhere shows.
 // A note being typed is left alone: redrawing would throw away what is not saved yet.
 async function refresh() {
   if (document.activeElement?.matches('textarea[data-note]')) return;
   DATA = await fetch('/api/data').then((r) => r.json());
+  READ_AT = Date.now();
   render();
 }
 window.addEventListener('focus', refresh);
+setInterval(() => {
+  const el = document.querySelector('[data-read]');
+  if (el) el.textContent = readAgo();
+}, 1000);
 refresh();

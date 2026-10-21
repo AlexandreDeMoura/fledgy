@@ -42,6 +42,7 @@
     "build": "npm run grammars && tsc -p tsconfig.build.json",
     "pretest": "npm run build",
     "test": "vitest run --dir src",
+    "demo": "npm run build && node scripts/demo.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {

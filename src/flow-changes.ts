@@ -27,6 +27,7 @@ export type ChangedSince = {
 
 const appHistories = new Map<string, { head: string; directory: string; commits: Set<string>; firstParents: Set<string> }>();
 const ancestors = new Map<string, Set<string>>();
+const lastChanges = new Map<string, { key: string; last: Map<string, RecentCommit> }>();
 
 function appHistory(root: string, home: string) {
   const key = `${root}\0${home}`;
@@ -125,18 +126,25 @@ export async function changeReader(repoRoot: string, home: string) {
     const uncommitted = objects ? await workingChanges(repoRoot, anchors, objects) : empty();
     const recent = await range(["-n", "30"]);
     // A Flow's last change can be older than the recent commits. The rest of
-    // the branch is read only while a Flow with Anchors has none among them.
-    const last = new Map<string, RecentCommit>();
-    const lastIn = (commits: RecentCommit[]) => {
-      for (const commit of commits) for (const flow of commit.flows) if (!last.has(flow)) last.set(flow, commit);
-    };
-    lastIn(recent);
-    const unfound = () => Object.entries(anchors).some(([flow, own]) => own.length && !last.has(flow));
-    if (objects && app && recent.length === 30 && unfound()) {
-      const older = [...app.firstParents].slice(30);
-      for (let n = 0; n < older.length && unfound(); n += 100) {
-        lastIn(await Promise.all(diffsOf(repoRoot, older.slice(n, n + 100), candidates).map(changesIn)));
+    // the branch is read only while a Flow with Anchors has none among them,
+    // and once for the same HEAD and the same Anchors in every version.
+    const lastKey = JSON.stringify([app?.head, versions.map(version => version.source), anchors]);
+    const lastKept = lastChanges.get(`${repoRoot}\0${home}`);
+    let last = lastKept?.key === lastKey ? lastKept.last : undefined;
+    if (!last) {
+      const found = last = new Map<string, RecentCommit>();
+      const lastIn = (commits: RecentCommit[]) => {
+        for (const commit of commits) for (const flow of commit.flows) if (!found.has(flow)) found.set(flow, commit);
+      };
+      lastIn(recent);
+      const unfound = () => Object.entries(anchors).some(([flow, own]) => own.length && !found.has(flow));
+      if (objects && app && recent.length === 30 && unfound()) {
+        const older = [...app.firstParents].slice(30);
+        for (let n = 0; n < older.length && unfound(); n += 100) {
+          lastIn(await Promise.all(diffsOf(repoRoot, older.slice(n, n + 100), candidates).map(changesIn)));
+        }
       }
+      if (app) lastChanges.set(`${repoRoot}\0${home}`, { key: lastKey, last: found });
     }
     return {
       changes: {

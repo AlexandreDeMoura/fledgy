@@ -66,7 +66,7 @@ The way the Flow goes when nothing goes wrong.
 
 The main path of *Upgrade to Pro* has four Steps: the person clicks Upgrade, picks Pro, pays by card, and sees their account on Pro.
 
-Good to know: in the web view, a Flow has one chip per path: the main path first, then each [Variant](#variant).
+Good to know: in the web view, a Flow lists its paths on the left: the main path first, then each [Variant](#variant).
 
 ### Variant
 
@@ -84,7 +84,7 @@ What the app does in this step, out of sight of the person using it.
 
 When the person pays: “The app asks the payment provider to charge the card, and moves the account to Pro once the provider confirms. If the charge fails, the plan stays as it was.”
 
-Good to know: when the app does something, the Step names the [Parts](#part) that do it. The Step where the person pays names two, *Card payment* and *Plan change*, and the web view shows “2 Parts in this step”. Some Steps name no Part, like filling in a form, where only the person using the app has something to do.
+Good to know: when the app does something, the Step names the [Parts](#part) that do it. The Step where the person pays names two, *Card payment* and *Plan change*, and the web view shows both under “Parts”, each opening on where it lives in the code. Some Steps name no Part, like filling in a form, where only the person using the app has something to do.
 
 ### Part
 

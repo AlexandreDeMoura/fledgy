@@ -6,6 +6,13 @@ import { commitAll, flow as flowYaml, git, hostRepo, knowledgeBase, partWithAnch
 import { qaResultsFile, recordQaResult } from "./qa-results.js";
 import { startView, type View } from "./view.js";
 import { stopHook } from "./stop-hook.js";
+import { diffsOf } from "./code-changes.js";
+
+// Watched, so a test can tell whether older commits were looked through.
+vi.mock("./code-changes.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./code-changes.js")>();
+  return { ...actual, diffsOf: vi.fn(actual.diffsOf) };
+});
 
 const flow = "approve-a-tool-call";
 const part = "knowledge-base/parts/tool-approval.yaml";
@@ -350,6 +357,21 @@ test("a Flow's last change is found again after a new commit without reading old
   expect((await data()).changes.flows[flow].last).toMatchObject({ sha: oldChange });
   // Only the recent commits are read again: the older ones are already known.
   expect(fs.readFileSync(trace, "utf8").match(/built-in: git log .*--patch/g)).toHaveLength(1);
+});
+
+test("a Flow no commit changed is looked for once, until HEAD or the Knowledge base changes", async () => {
+  const root = app();
+  for (let n = 0; n < 31; n++) commitAll(root, `empty ${n}`);
+  // Written now: no Knowledge base version of the older commits names it.
+  write(root, "knowledge-base/flows/new.yaml", flowYaml);
+  const { data } = await api(root);
+  expect((await data()).changes.flows.new.last).toBeUndefined();
+  vi.mocked(diffsOf).mockClear();
+  expect((await data()).changes.flows.new.last).toBeUndefined();
+  expect(diffsOf).not.toHaveBeenCalled();
+  commitAll(root, "one more");
+  await data();
+  expect(diffsOf).toHaveBeenCalled();
 });
 
 test("a warm request reuses cached commit facts without starting cat-file", async () => {
