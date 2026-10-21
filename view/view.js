@@ -4,7 +4,8 @@
 // Flows and its Flows to write. A Flow to write opens in a popover that says how to write it.
 // A page per Flow: its facts, then two tabs. "Read the Flow" lists the paths on the left and the
 // Steps of the chosen one on the right, each with its Parts, one of which can be opened to show
-// where it lives in the code. "Check by hand" holds the path's Manual QA Check.
+// where it lives in the code. "Check by hand" holds the path's Manual QA Check: a row per QA Step,
+// the current one open to record its result, by click or by key, and move on to the next.
 // The Overview and the Changes still show the former home page, until their own pages are made.
 // Every term on screen is underlined, and hovering or focusing it shows its sentence from the guide.
 // Everything on screen but the Areas folded in the sidebar is addressed by the URL, so any state
@@ -115,12 +116,6 @@ function readAgo() {
 
 // ---------- QA Results: one of four states per QA Step ----------
 
-const STATES = [
-  ['not-checked', 'Not checked'],
-  ['passed', 'Passed'],
-  ['failed', 'Failed'],
-  ['could-not-perform', 'Could not perform'],
-];
 const STATE_LINE = { 'not-checked': 'Not checked', passed: '✓ Passed', failed: '✕ Failed', 'could-not-perform': '– Could not perform' };
 
 let REFUSED = null; // what the server said when it last refused to record a result
@@ -632,7 +627,7 @@ function pathCard(fid, P, x, p, check) {
     : x.id === 'main'
       ? `<span class="d-psub">${plural(x.steps.length, 'step')} · ${esc(x.outcome)}</span>`
       : `<span class="d-pmeta">${x.divergesAt == null ? '<span class="d-warn">leaves at a step the main path does not have</span>' : `leaves at step ${x.divergesAt + 1}`} · ${plural(own, 'step')}</span>`;
-  return `<button class="d-pcard ${x.id === p.id ? 'on' : ''}" ${set({ path: x.id === 'main' ? null : x.id, step: null, part: null })}>
+  return `<button class="d-pcard ${x.id === p.id ? 'on' : ''}" ${set({ path: x.id === 'main' ? null : x.id, step: null, part: null, qa: null })}>
     <span class="d-ptitle"><span>${x.id === 'main' ? term('mainpath', esc(x.name), true) : esc(x.name)}</span>${check ? '' : badge}</span>
     ${sub}
   </button>`;
@@ -661,52 +656,137 @@ function sinceBanner(c) {
   </div>`;
 }
 
-function qaStep(fid, p, qs, i) {
-  const r = result(fid, p, qs);
-  const ref = esc(JSON.stringify({ flow: fid, path: p.id, step: qs.id }));
-  const after = [
+// The QA Step the Check opens on: the one named in the address, or the first not checked.
+function currentQa(fid, p) {
+  const n = Number.parseInt(q('qa') ?? '', 10);
+  if (Number.isInteger(n) && n >= 0 && n < p.qa.steps.length) return n;
+  const open = p.qa.steps.findIndex((qs) => result(fid, p, qs).state === 'not-checked');
+  return Math.max(open, 0);
+}
+// A note typed on a QA Step not checked yet waits here, by step, to be recorded with its result.
+const NOTES = new Map();
+const qaRef = (fid, p, qs) => JSON.stringify({ flow: fid, path: p.id, step: qs.id });
+
+// What has happened to the Flow since a result was recorded, said in a few words.
+function sinceWords(r) {
+  return [
     r.since?.commits.length ? `${plural(r.since.commits.length, 'commit')} to this Flow since${r.since.byDate ? ', by date' : ''}` : '',
-    r.since?.uncommitted ? 'uncommitted changes since' : '',
+    r.since?.uncommitted ? 'changes not committed since' : '',
   ]
     .filter(Boolean)
     .join(' and ');
-  return `<div class="d-card d-check s-${r.state}">
-    <div class="d-checkh"><span class="d-num">${i + 1}</span><span class="d-st s-${r.state}">${STATE_LINE[r.state]}</span></div>
-    <div class="d-dx">
-      <span>Do</span><div class="d-do">${esc(qs.do)}</div>
-      <span>Expect</span><div>${esc(qs.expect)}</div>
+}
+
+// A QA Step that is not the current one: what to do, its result and its note.
+function qaRow(fid, p, qs, i) {
+  const r = result(fid, p, qs);
+  return `<button class="d-qrow s-${r.state}" ${set({ qa: i })} data-qa="${i}">
+    <span class="d-qnum">${i + 1}</span>
+    <span class="d-qtext"><span>${esc(qs.do)}</span>${r.note ? `<span class="d-qnote">“${esc(r.note)}”</span>` : ''}</span>
+    <span class="d-qstate">${
+      r.state === 'not-checked'
+        ? '<span class="d-st s-not-checked">Not checked</span>'
+        : `<span class="d-st s-${r.state}">${STATE_LINE[r.state]}</span><span class="d-when">${esc(ago(r.date))}</span>${
+            moved(r) ? `<span class="d-qmoved" title="${esc(sinceWords(r))}">changed since</span>` : ''
+          }`
+    }</span>
+  </button>`;
+}
+
+// The current QA Step, open: what to do, what to expect, the three results and a note.
+function qaCurrent(fid, p, qs, i) {
+  const r = result(fid, p, qs);
+  const ref = esc(qaRef(fid, p, qs));
+  const button = (state, label, key, mark) =>
+    `<button class="d-rbtn ${state} ${r.state === state ? 'on' : ''}" data-result="${ref}" data-state="${state}"><span class="d-rmark">${mark}</span>${label}<kbd>${key}</kbd></button>`;
+  const note = r.state === 'not-checked' ? (NOTES.get(qaRef(fid, p, qs)) ?? '') : r.note;
+  const after = sinceWords(r);
+  const status =
+    r.state === 'not-checked'
+      ? 'Not checked yet'
+      : `<span title="${esc(new Date(r.date).toLocaleString())} · ${esc(r.commit)}">${STATE_LINE[r.state]} ${esc(ago(r.date))}</span>${
+          r.uncommitted ? ' · <span class="d-warn">recorded with changes to this Flow not committed</span>' : ''
+        }${after ? ` · <span class="d-warn">${esc(after)}</span>` : ''} · <button class="d-qclear" data-result="${ref}" data-state="not-checked">Set back to not checked</button>`;
+  return `<div class="d-qcur s-${r.state}" data-qa="${i}">
+    <span class="d-qnum">${i + 1}</span>
+    <div class="d-qbody">
+      <div class="d-lab">Do</div>
+      <div class="d-qdo">${esc(qs.do)}</div>
+      <div class="d-lab">Expect</div>
+      <div class="d-qexpect">${esc(qs.expect)}</div>
+      ${
+        qs.id == null
+          ? '<div class="d-rec d-warn">This QA Step has no id, so no result can be recorded on it.</div>'
+          : `<div class="d-qact">
+              ${button('passed', 'Passed', 'P', '✓')}${button('failed', 'Failed', 'F', '✕')}${button('could-not-perform', term('cnp', 'Could not perform', true), 'X', '–')}
+              <label class="d-qnotebox"><input data-note="${ref}" value="${esc(note)}" placeholder="Note about what you saw" autocomplete="off" /><kbd>N</kbd></label>
+            </div>
+            <div class="d-qfoot">${status}</div>`
+      }
     </div>
-    ${
-      qs.id == null
-        ? '<div class="d-rec d-warn">This QA Step has no id, so no result can be recorded on it.</div>'
-        : `<div class="d-seg">${STATES.map(([st, label]) => `<button class="${r.state === st ? 'on' : ''}" data-result="${ref}" data-state="${st}">${st === 'could-not-perform' ? term('cnp', label, true) : label}</button>`).join('')}</div>`
-    }
-    ${
-      r.state !== 'not-checked'
-        ? `<div class="d-rec" title="${esc(new Date(r.date).toLocaleString())} · ${esc(r.commit)}">Recorded ${ago(r.date)}${r.uncommitted ? ' · <span class="d-warn">with changes to this Flow that were not committed</span>' : ''}${after ? ` · <span class="d-warn">${after}</span>` : ''}</div>
-    <textarea data-note="${ref}" rows="2" placeholder="Optional note about what you saw">${esc(r.note)}</textarea>`
-        : ''
-    }
   </div>`;
 }
 
-function checkByHand(fid, p) {
+// After this path: the next one nobody started, else the next one with a QA Step not checked.
+function nextPath(fid, P, p) {
+  const at = P.indexOf(p);
+  const after = [...P.slice(at + 1), ...P.slice(0, at)].filter((x) => x.qa.steps.length);
+  const left = (x) => tally(fid, [x])['not-checked'];
+  const fresh = after.find((x) => left(x) === x.qa.steps.length);
+  if (fresh) return { path: fresh, why: 'next path not started' };
+  const unfinished = after.find((x) => left(x) > 0);
+  return unfinished && { path: unfinished, why: 'next path with steps not checked' };
+}
+
+function checkByHand(fid, P, p) {
   const t = tally(fid, [p]);
   const since = changedSince(fid, p);
+  const cur = currentQa(fid, p);
+  const next = nextPath(fid, P, p);
   const tallyLine = [['passed', 'passed'], ['failed', 'failed'], ['could-not-perform', 'could not perform'], ['not-checked', 'not checked']]
     .filter(([k]) => t[k])
     .map(([k, label]) => `<span class="d-st s-${k}">${t[k]} ${label}</span>`)
     .join('<span class="dim"> · </span>');
+  const setup = p.qa.setup ?? [];
   return `<div class="d-qapane">
     <div class="d-qah"><span class="d-lab">${term('qa', 'Manual QA Check')} · ${esc(p.name)}</span><span class="d-tally">${tallyLine}</span>${
       t['not-checked'] < t.all ? `<button class="d-link" data-reset="${esc(JSON.stringify({ flow: fid, path: p.id }))}">Reset results</button>` : ''
     }</div>
     ${REFUSED ? `<div class="d-rec d-warn">Not recorded: ${esc(REFUSED)}</div>` : ''}
-    ${since ? sinceBanner(since) : ''}
-    <div class="d-card"><div class="d-lab">${term('prepare', 'Prepare')}</div><ol class="d-setup">${p.qa.setup.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></div>
-    ${p.qa.steps.map((qs, i) => qaStep(fid, p, qs, i)).join('')}
     ${DATA.resultsFile ? '' : '<div class="d-rec d-warn">Results cannot be recorded yet: they need a git repo with at least one commit.</div>'}
+    ${since ? sinceBanner(since) : ''}
+    <div class="d-qprep"><span class="d-lab">${term('prepare', 'Prepare')}</span><span class="d-qpreptext">${
+      setup.length ? setup.map((x, i) => `${i + 1}. ${esc(x)}`).join(' ') : '<span class="d-none">Nothing to set up.</span>'
+    }</span><span class="d-qprepn">${plural(setup.length, 'thing')}</span></div>
+    <div class="d-qlist">${p.qa.steps.map((qs, i) => (i === cur ? qaCurrent(fid, p, qs, i) : qaRow(fid, p, qs, i))).join('')}</div>
+    <div class="d-qkeys">
+      <span><kbd>J</kbd><kbd>K</kbd>next / previous step</span>
+      <span><kbd>P</kbd><kbd>F</kbd><kbd>X</kbd>record and move on</span>
+      <span><kbd>N</kbd>note</span>
+      <span class="d-qthen">${
+        next
+          ? `Then: <button ${set({ path: next.path.id === 'main' ? null : next.path.id, qa: null, step: null, part: null })}>${next.why}, ${esc(next.path.name)} →</button>`
+          : t.all && !t['not-checked']
+            ? 'Every path of this Flow is checked.'
+            : ''
+      }</span>
+    </div>
   </div>`;
+}
+
+// Records a result on the current QA Step, with its note, then moves on to the next one.
+async function recordCurrent(ref, state) {
+  const input = [...document.querySelectorAll('[data-note]')].find((el) => el.dataset.note === ref);
+  const note = state === 'not-checked' ? '' : (input?.value ?? '');
+  await post('/api/result', { ...JSON.parse(ref), state, note });
+  if (REFUSED) return render();
+  NOTES.delete(ref);
+  const fid = q('flow');
+  const P = DATA.flows[fid]?.paths ?? [];
+  const p = P.find((x) => x.id === q('path')) ?? P[0];
+  const at = p ? p.qa.steps.findIndex((qs) => qaRef(fid, p, qs) === ref) : -1;
+  if (state === 'not-checked' || at < 0) return setQ({ qa: at < 0 ? null : at });
+  setQ({ qa: Math.min(at + 1, p.qa.steps.length - 1) });
 }
 
 // The Step a path opens on: a Variant's first Step of its own, the main path's first.
@@ -770,10 +850,10 @@ function flowPage(fid) {
             : ''
         }
       </div>
-      <div class="d-content" data-pane="content" data-key="${esc(`${fid}|${p.id}|${check}`)}">
+      <div class="d-content ${check ? 'check' : ''}" data-pane="content" data-key="${esc(`${fid}|${p.id}|${check}`)}">
         ${
           check
-            ? checkByHand(fid, p)
+            ? checkByHand(fid, P, p)
             : `${p.id !== 'main' && p.divergesAt == null ? `<div class="d-vbanner"><span class="d-lab blue">${term('variant', 'Variant')}</span><span>${esc(p.when)}</span><span class="d-warn">It leaves at a Step the main path does not have.</span></div>` : ''}
                ${p.steps.map((s, i) => stepRow(fid, P, p, s, i, cur)).join('')}
                <div class="d-outcome"><span class="d-lab green">Outcome</span><span>${esc(p.outcome)}</span></div>`
@@ -806,12 +886,13 @@ function render() {
     input.setSelectionRange(input.value.length, input.value.length);
   }
   placePopover();
-  // A Step chosen elsewhere than in view is brought into it; a path opened on a Variant starts where it leaves.
-  const step = document.querySelector('.d-step.on');
-  const shown = fid && { path: `${fid}|${q('path')}|${q('tab')}`, step: q('step') };
-  if (step && shown && (shown.path !== SHOWN.path || shown.step !== SHOWN.step)) {
-    if (shown.path === SHOWN.path) step.scrollIntoView({ block: 'nearest' });
-    else if (+step.dataset.step > 0) step.scrollIntoView({ block: 'start' });
+  // A Step or a QA Step chosen elsewhere than in view is brought into it; a path opened on a Variant starts where it leaves.
+  const check = q('tab') === 'check';
+  const target = document.querySelector(check ? '.d-qcur' : '.d-step.on');
+  const shown = fid && { path: `${fid}|${q('path')}|${q('tab')}`, at: check ? q('qa') : q('step') };
+  if (target && shown && (shown.path !== SHOWN.path || shown.at !== SHOWN.at)) {
+    if (shown.path === SHOWN.path || check) target.scrollIntoView({ block: 'nearest' });
+    else if (+target.dataset.step > 0) target.scrollIntoView({ block: 'start' });
   }
   SHOWN = shown || {};
 }
@@ -859,19 +940,24 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.set) setQ(JSON.parse(t.dataset.set));
   if (t.dataset.reset) await post('/api/result-reset', JSON.parse(t.dataset.reset));
   else if (t.dataset.result) {
-    // Read the note from the page: a click on a state can land before the note's own change is saved.
-    const note = t.closest('.d-check').querySelector('textarea')?.value ?? '';
-    await post('/api/result', { ...JSON.parse(t.dataset.result), state: t.dataset.state, note });
+    // The note is read from the page: a click on a state can land before the note's own change is saved.
+    return recordCurrent(t.dataset.result, t.dataset.state);
   } else return;
   render();
 });
 // Saving a note redraws nothing, so a click that follows it straight away still lands on its button.
 document.addEventListener('change', (e) => {
-  if (e.target.matches('textarea[data-note]')) post('/api/note', { ...JSON.parse(e.target.dataset.note), note: e.target.value });
+  if (!e.target.matches('[data-note]')) return;
+  const ref = JSON.parse(e.target.dataset.note);
+  const p = DATA.flows[ref.flow]?.paths.find((x) => x.id === ref.path);
+  const qs = p?.qa.steps.find((x) => x.id === ref.step);
+  // A note on a step not checked yet is kept until its result is recorded.
+  if (qs && result(ref.flow, p, qs).state !== 'not-checked') post('/api/note', { ...ref, note: e.target.value });
 });
 
 // The search shows its results as the Builder types, without redrawing the page.
 document.addEventListener('input', (e) => {
+  if (e.target.matches('[data-note]')) return NOTES.set(e.target.dataset.note, e.target.value);
   if (!e.target.matches('[data-search]')) return;
   SEARCH = e.target.value;
   SEARCH_AT = 0;
@@ -901,6 +987,11 @@ document.addEventListener('keydown', (e) => {
     }
     return;
   }
+  // Enter or Escape leaves a note, which saves it, so the keys work again.
+  if (e.target.matches?.('[data-note]') && (e.key === 'Enter' || e.key === 'Escape')) {
+    e.preventDefault();
+    return e.target.blur();
+  }
   if (e.key === 'Escape') {
     hideTip();
     if (q('tw')) setQ({ tw: null });
@@ -918,6 +1009,21 @@ document.addEventListener('keydown', (e) => {
     const p = P.find((x) => x.id === q('path')) ?? P[0];
     const step = Math.max(0, Math.min(p.steps.length - 1, currentStep(p) + (key === 'j' ? 1 : -1)));
     setQ({ step, part: null });
+  } else if (q('tab') === 'check' && ['j', 'k', 'p', 'f', 'x', 'n'].includes(key)) {
+    const P = DATA.flows[fid].paths;
+    const p = P.find((x) => x.id === q('path')) ?? P[0];
+    const cur = currentQa(fid, p);
+    const qs = p.qa.steps[cur];
+    if (!qs) return;
+    if (key === 'j' || key === 'k') return setQ({ qa: Math.max(0, Math.min(p.qa.steps.length - 1, cur + (key === 'j' ? 1 : -1))) });
+    if (qs.id == null) return;
+    if (key === 'n') {
+      e.preventDefault();
+      const note = document.querySelector('.d-qcur [data-note]');
+      note?.focus();
+      return note?.setSelectionRange(note.value.length, note.value.length);
+    }
+    recordCurrent(qaRef(fid, p, qs), { p: 'passed', f: 'failed', x: 'could-not-perform' }[key]);
   }
 });
 addEventListener('resize', placePopover);
@@ -925,7 +1031,7 @@ addEventListener('resize', placePopover);
 // Read again on load and whenever the window comes back to the front, so an edit, a stage or a commit made elsewhere shows.
 // A note being typed is left alone: redrawing would throw away what is not saved yet.
 async function refresh() {
-  if (document.activeElement?.matches('textarea[data-note]')) return;
+  if (document.activeElement?.matches('[data-note]')) return;
   DATA = await fetch('/api/data').then((r) => r.json());
   READ_AT = Date.now();
   render();

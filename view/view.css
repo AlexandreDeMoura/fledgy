@@ -124,24 +124,6 @@ body { margin: 0; background: #0a0b0d; }
 .D .d-sincef.d-warn { color: var(--amber); }
 .D .d-rec { font: 400 11px/1.5 var(--mono); color: var(--dim); }
 .D .d-rec.d-warn { color: var(--amber); }
-.D .d-file { color: var(--ink3); overflow-wrap: anywhere; user-select: all; }
-.D .d-card { display: flex; flex-direction: column; gap: 10px; padding: 13px 16px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 10px; background: var(--panel); }
-.D .d-check.s-passed { border-color: oklch(0.74 0.12 158 / 0.35); }
-.D .d-check.s-failed { border-color: oklch(0.72 0.13 25 / 0.5); }
-.D .d-check.s-could-not-perform { border-color: oklch(0.82 0.12 78 / 0.4); }
-.D .d-checkh { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.D .d-checkh .d-st { font-weight: 500; font-size: 12px; }
-.D .d-setup { margin: 0; padding-left: 18px; color: #dadde2; }
-.D .d-setup li { margin-bottom: 3px; }
-.D .d-dx { display: grid; grid-template-columns: 50px minmax(0, 1fr); gap: 7px 12px; color: #dadde2; }
-.D .d-dx > span { font: 500 9.5px/20px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink3); }
-.D .d-do { font-weight: 500; color: var(--ink); }
-.D .d-seg { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 7px; }
-.D .d-seg button { padding: 4px 8px; border: 1px solid transparent; border-radius: 5px; font-weight: 500; font-size: 11.5px; color: #b4b9c2; }
-.D .d-seg button:hover { color: var(--ink); }
-.D .d-seg button.on { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.22); color: var(--ink); }
-.D textarea { resize: none; width: 100%; padding: 8px 10px; background: #101215; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 7px; outline: none; color: var(--ink); font: 400 12.5px/1.45 'Geist', sans-serif; }
-.D textarea::placeholder { color: #5e636c; }
 
 
 /* The home page does not scroll as a whole: the written Flows scroll in their own container. */
@@ -260,6 +242,7 @@ body { margin: 0; background: #0a0b0d; }
 .D .d-pathcol { display: flex; flex-direction: column; gap: 4px; padding: 16px 12px 40px 0; border-right: 1px solid var(--line); }
 .D .d-pathcol > * { flex: none; }
 .D .d-content { padding: 10px 0 90px 32px; }
+.D .d-content.check { padding-bottom: 0; }
 
 /* a path: its name, then its Steps or its results */
 .D .d-pcard { display: flex; flex-direction: column; gap: 5px; width: 100%; padding: 11px 13px; border: 1px solid transparent; border-radius: 9px; }
@@ -319,9 +302,62 @@ body { margin: 0; background: #0a0b0d; }
 .D .d-anc:hover .d-ancp { color: oklch(0.8 0.1 262); }
 .D .d-vbanner { display: flex; align-items: baseline; gap: 12px; margin: 10px 0 4px; padding: 9px 14px; border: 1px solid oklch(0.74 0.13 262 / 0.35); border-radius: 8px; background: oklch(0.74 0.13 262 / 0.06); font-size: 13px; }
 .D .d-outcome { display: flex; align-items: baseline; gap: 12px; margin: 4px 0 0 48px; padding: 12px 14px; border-radius: 8px; background: oklch(0.74 0.12 158 / 0.07); font-size: 13px; }
-.D .d-qapane { display: flex; flex-direction: column; gap: 10px; max-width: 860px; padding-top: 10px; }
+.D .d-qapane { display: flex; flex-direction: column; gap: 12px; min-height: 100%; padding-top: 14px; }
+.D .d-qapane > * { flex: none; }
 .D .d-qapane .d-qah { justify-content: flex-start; gap: 16px; }
 .D .d-qapane .d-qah .d-link { margin-left: auto; }
+
+/* Check by hand: the QA Steps as rows, the current one open, the keys at the foot */
+.D .d-qprep { display: flex; align-items: baseline; gap: 14px; padding: 11px 15px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 10px; background: var(--panel); font-size: 13px; color: var(--ink2); }
+.D .d-qpreptext { flex: 1; min-width: 0; }
+.D .d-qprepn { flex: none; font: 400 11px var(--mono); color: var(--dim); }
+.D .d-qlist { display: flex; flex-direction: column; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.D .d-qlist > * + * { border-top: 1px solid var(--line); }
+.D .d-qnum { flex: none; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 50%; font: 500 10.5px var(--mono); color: var(--ink2); }
+.D .s-failed > .d-qnum { border-color: var(--red); color: var(--red); }
+.D .s-could-not-perform > .d-qnum { border-color: var(--amber); color: var(--amber); }
+.D .s-passed > .d-qnum { border-color: oklch(0.74 0.12 158 / 0.6); color: var(--green); }
+.D .d-qrow { display: flex; align-items: flex-start; gap: 14px; width: 100%; padding: 12px 15px; }
+.D .d-qrow:hover { background: rgba(255, 255, 255, 0.025); }
+.D .d-qrow.s-failed { background: oklch(0.72 0.13 25 / 0.06); }
+.D .d-qtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-top: 1px; font-weight: 500; font-size: 13.5px; }
+.D .d-qnote { font-weight: 400; font-size: 13px; color: var(--ink3); }
+.D .s-failed .d-qnote { color: var(--red); }
+.D .s-could-not-perform .d-qnote { color: var(--amber); }
+.D .d-qstate { flex: none; display: flex; align-items: baseline; gap: 8px; padding-top: 2px; font-weight: 500; font-size: 12.5px; }
+.D .d-qmoved { font: 400 10.5px var(--mono); color: var(--amber); }
+.D .d-qcur { display: flex; gap: 16px; padding: 18px 18px 16px; box-shadow: inset 0 0 0 1px oklch(0.74 0.13 262 / 0.6); background: #0f1216; scroll-margin: 12px 0 80px; }
+.D .d-qcur > .d-qnum { background: var(--blue); border-color: var(--blue); color: #0b0c0e; }
+.D .d-qbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.D .d-qdo { margin-bottom: 10px; font: 600 19px/1.35 'Geist', sans-serif; letter-spacing: -0.01em; }
+.D .d-qexpect { max-width: 720px; font-size: 14.5px; line-height: 1.55; color: var(--ink); text-wrap: pretty; }
+.D .d-qact { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.D .d-rbtn { display: inline-flex; align-items: center; gap: 10px; padding: 9px 12px 9px 14px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 7px; font-weight: 500; font-size: 13px; }
+.D .d-rbtn kbd { margin-left: 4px; }
+.D .d-rmark { font-size: 12px; }
+.D .d-rbtn.passed { border-color: oklch(0.74 0.12 158 / 0.45); }
+.D .d-rbtn.passed .d-rmark { color: var(--green); }
+.D .d-rbtn.failed { border-color: oklch(0.72 0.13 25 / 0.5); }
+.D .d-rbtn.failed .d-rmark { color: var(--red); }
+.D .d-rbtn.could-not-perform { border-color: oklch(0.82 0.12 78 / 0.45); }
+.D .d-rbtn.could-not-perform .d-rmark { color: var(--amber); }
+.D .d-rbtn:hover { background: rgba(255, 255, 255, 0.04); }
+.D .d-rbtn.passed.on { background: oklch(0.74 0.12 158 / 0.16); border-color: var(--green); }
+.D .d-rbtn.failed.on { background: oklch(0.72 0.13 25 / 0.16); border-color: var(--red); }
+.D .d-rbtn.could-not-perform.on { background: oklch(0.82 0.12 78 / 0.14); border-color: var(--amber); }
+.D .d-qnotebox { flex: 1 1 220px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 7px; cursor: text; }
+.D .d-qnotebox:focus-within { border-color: oklch(0.74 0.13 262 / 0.6); }
+.D .d-qnotebox input { flex: 1; min-width: 0; padding: 9px 0; border: 0; outline: none; background: none; color: var(--ink); font: 400 13px 'Geist', sans-serif; }
+.D .d-qnotebox input::placeholder { color: var(--dim); }
+.D .d-qfoot { margin-top: 8px; font: 400 11px/1.6 var(--mono); color: var(--dim); }
+.D .d-qclear { color: var(--ink3); text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.25); text-underline-offset: 2px; }
+.D .d-qclear:hover { color: var(--ink); }
+.D .d-qkeys { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 26px; margin-top: auto; padding: 14px 0 16px; border-top: 1px solid var(--line); background: #0a0b0d; font-size: 12px; color: var(--ink3); }
+.D .d-qkeys > span { display: inline-flex; align-items: center; gap: 4px; }
+.D .d-qkeys kbd { margin-right: 2px; }
+.D .d-qthen { margin-left: auto; min-width: 0; }
+.D .d-qthen button { color: oklch(0.8 0.1 262); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+.D .d-qthen button:hover { color: oklch(0.88 0.07 262); }
 
 /* ---------- the words: a term on screen, and its tooltip ---------- */
 .D .d-term { text-decoration: underline dotted rgba(255, 255, 255, 0.4); text-underline-offset: 3px; text-decoration-thickness: 1px; cursor: help; }
