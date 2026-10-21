@@ -64,10 +64,17 @@ function diffFiles(text: string): DiffFile[] {
 
 // Sparse retains columns with no candidate-path changes. Full diff preserves
 // rename sources outside the candidate paths; only anchored files are parsed.
-const windows = new Map<string, CommitDiff[]>();
+// Every range read at one HEAD is kept until HEAD or the candidates change.
+// There is no count limit: a request reads one range per QA Result, and all
+// of them must still be here on the next request.
+const windows = new Map<string, { headAndCandidates: string; ranges: Map<string, CommitDiff[]> }>();
 export function commitDiffs(root: string, range: string[], candidates: string[], head?: string): CommitDiff[] {
-  const key = JSON.stringify([root, head, range, candidates]);
-  if (head && windows.has(key)) return windows.get(key)!;
+  const headAndCandidates = JSON.stringify([head, candidates]);
+  let kept = head ? windows.get(root) : undefined;
+  if (head && kept?.headAndCandidates !== headAndCandidates) windows.set(root, kept = { headAndCandidates, ranges: new Map() });
+  const key = JSON.stringify(range);
+  const cached = kept?.ranges.get(key);
+  if (cached) return cached;
   if (!candidates.length) candidates = ["knowledge-base"];
   const log = readGit(root, "log", "--first-parent", "-m", "--diff-merges=first-parent", "--root", "--full-history", "--sparse", "--full-diff",
     ...diffArgs, `--format=${format}`, ...range, "--", ...candidates);
@@ -76,10 +83,7 @@ export function commitDiffs(root: string, range: string[], candidates: string[],
     const offset = [sha, date, subject, body].reduce((size, field) => size + field.length + 1, 0);
     return { sha, date, subject, body, files: diffFiles(record.slice(offset)) };
   });
-  if (head) {
-    windows.set(key, commits);
-    if (windows.size > 32) windows.delete(windows.keys().next().value!);
-  }
+  kept?.ranges.set(key, commits);
   return commits;
 }
 

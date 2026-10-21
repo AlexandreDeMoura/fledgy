@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readGit, gitObjects } from "./change-git.js";
-import { flowAnchors, knowledgeBaseFiles } from "./flow-anchors.js";
+import { flowAnchors, knowledgeBaseFiles, type FlowAnchors } from "./flow-anchors.js";
 import { commitDiffs, committedChanges, workingChanges, type Changes, type Commit } from "./code-changes.js";
-import { knowledgeBaseVersions, versionAnchors } from "./history.js";
+import { knowledgeBaseVersions, anchorsByVersion } from "./history.js";
 import { appDataDirectory } from "./qa-results.js";
 export type { Commit } from "./code-changes.js";
 
@@ -80,8 +80,8 @@ export async function changeReader(repoRoot: string, home: string) {
         anchorsFrom: before ? "before-first" as const : version ? "after" as const : "disk" as const,
       };
     };
-    const allAnchors = objects ? await Promise.all(versions.map(version => versionAnchors(version, objects))) : [];
-    const candidates = [...new Set([anchors, ...allAnchors].flatMap(byFlow =>
+    const byVersion = objects ? await anchorsByVersion(repoRoot, versions, objects) : new Map<string, FlowAnchors>();
+    const candidates = [...new Set([anchors, ...byVersion.values()].flatMap(byFlow =>
       Object.values(byFlow).flat().map(anchor => anchor.file),
     ))];
     const ranges = new Map<string, Promise<RecentCommit[]>>();
@@ -91,7 +91,7 @@ export async function changeReader(repoRoot: string, home: string) {
       if (!answer) {
         answer = objects && app ? Promise.all(commitDiffs(repoRoot, args, candidates, app.head).map(async commit => {
           const selected = pick(commit);
-          const atCommit = selected.version ? await versionAnchors(selected.version, objects) : anchors;
+          const atCommit = selected.version ? byVersion.get(selected.version.source)! : anchors;
           return {
             sha: commit.sha, date: commit.date, subject: commit.subject, body: commit.body,
             ...await committedChanges(repoRoot, commit, atCommit, objects, app.directory),

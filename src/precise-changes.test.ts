@@ -1,7 +1,9 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { commitAll, git, hostRepo, knowledgeBase, partWithAnchor } from "./testing/host-repo.js";
+import { commitAll, flow as flowYaml, git, hostRepo, knowledgeBase, partWithAnchor } from "./testing/host-repo.js";
+import { qaResultsFile, recordQaResult } from "./qa-results.js";
 import { startView, type View } from "./view.js";
 import { stopHook } from "./stop-hook.js";
 
@@ -348,6 +350,74 @@ test("a warm request reuses cached commit facts without starting cat-file", asyn
   fs.writeFileSync(trace, "");
   const warm = await data();
   expect(warm.changes).toEqual(cold.changes);
+  expect(fs.readFileSync(trace, "utf8")).not.toContain("cat-file --batch");
+});
+
+// What a warm request asked git for, after a cold one.
+async function warmGitTrace(root: string) {
+  const trace = path.join(home, "git-trace");
+  vi.stubEnv("GIT_TRACE", trace);
+  const { data } = await api(root);
+  const cold = await data();
+  fs.writeFileSync(trace, "");
+  const warm = await data();
+  expect(warm.changes).toEqual(cold.changes);
+  expect(warm.results).toEqual(cold.results);
+  return { warm, trace: fs.readFileSync(trace, "utf8") };
+}
+
+test("a warm request reads no commits again when QA Results were recorded at many commits", async () => {
+  const steps = Array.from({ length: 40 }, (_, n) => `step-${n}`);
+  const root = app();
+  const qa = steps.map(step => `    - id: ${step}\n      do: Click Approve.\n      expect: The tool runs.\n`).join("");
+  write(root, `knowledge-base/flows/${flow}.yaml`, flowYaml.replace("    - id: approve\n      do: Click Approve.\n      expect: The tool runs.\n", qa));
+  commitAll(root, "many QA Steps");
+  const file = qaResultsFile(root, home)!;
+  for (const step of steps) {
+    commitAll(root, `before ${step}`);
+    recordQaResult(root, file, { flow, path: "main", step }, false, { state: "passed", note: "" });
+  }
+  const { warm, trace } = await warmGitTrace(root);
+  expect(Object.keys(warm.results[flow].main)).toHaveLength(steps.length);
+  expect(trace).not.toContain("built-in: git log");
+  expect(trace).not.toContain("cat-file --batch");
+});
+
+test("a warm request reads no Knowledge base version again when there are hundreds", async () => {
+  const root = app();
+  // In a Shared install, each commit that changes the Knowledge base is a
+  // version. One fast-import writes them all, far quicker than a commit each.
+  const data = (text: string) => `data ${Buffer.byteLength(text)}\n${text}\n`;
+  let stream = "";
+  for (let n = 0; n < 300; n++) {
+    stream += `commit refs/heads/${git(root, "branch", "--show-current")}\n`;
+    stream += `committer Builder <builder@example.com> ${1_900_000_000 + n} +0000\n${data(`version ${n}`)}`;
+    if (n === 0) stream += `from ${git(root, "rev-parse", "HEAD")}\n`;
+    stream += `M 100644 inline ${part}\n${data(`${partWithAnchor("code.ts#anchored", "backend")}# ${n}\n`)}`;
+  }
+  execFileSync("git", ["fast-import", "--quiet"], { cwd: root, input: stream });
+  git(root, "reset", "--quiet", "--hard");
+  const { trace } = await warmGitTrace(root);
+  expect(trace).not.toContain("built-in: git log");
+  expect(trace).not.toContain("cat-file --batch");
+});
+
+test("going back to a branch reads none of its Knowledge base versions again", async () => {
+  const root = app();
+  const trunk = git(root, "branch", "--show-current");
+  git(root, "checkout", "--quiet", "-b", "feature");
+  write(root, part, partWithAnchor("code.ts#other", "backend"));
+  commitAll(root, "feature Knowledge base");
+  const trace = path.join(home, "git-trace");
+  vi.stubEnv("GIT_TRACE", trace);
+  const { data } = await api(root);
+  const before = await data();
+  git(root, "checkout", "--quiet", trunk);
+  await data();
+  git(root, "checkout", "--quiet", "feature");
+  fs.writeFileSync(trace, "");
+  const back = await data();
+  expect(back.changes).toEqual(before.changes);
   expect(fs.readFileSync(trace, "utf8")).not.toContain("cat-file --batch");
 });
 

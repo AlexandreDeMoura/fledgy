@@ -95,10 +95,21 @@ export function knowledgeBaseVersions(repoRoot: string, store?: string, head?: s
   return versions;
 }
 
-const savedAnchors = new Map<string, FlowAnchors>();
-export async function versionAnchors(version: KnowledgeBaseVersion, objects: GitObjects): Promise<FlowAnchors> {
-  const cached = savedAnchors.get(version.source);
-  if (cached) return cached;
+// The Anchors of each Knowledge base version, by its source. A Knowledge base
+// version never changes, so its Anchors are read once and kept, even after a
+// branch switch leaves it out of the list: there is no count limit, since
+// every request needs the Anchors of every Knowledge base version.
+const savedAnchors = new Map<string, Map<string, FlowAnchors>>();
+export async function anchorsByVersion(repoRoot: string, versions: KnowledgeBaseVersion[], objects: GitObjects): Promise<Map<string, FlowAnchors>> {
+  let saved = savedAnchors.get(repoRoot);
+  if (!saved) savedAnchors.set(repoRoot, saved = new Map());
+  await Promise.all(versions.filter(version => !saved.has(version.source)).map(async version => {
+    saved.set(version.source, await versionAnchors(version, objects));
+  }));
+  return new Map(versions.map(version => [version.source, saved.get(version.source)!]));
+}
+
+async function versionAnchors(version: KnowledgeBaseVersion, objects: GitObjects): Promise<FlowAnchors> {
   const files = new Map<string, string>();
   const commit = await objects.get(version.source);
   const tree = /^tree ([a-f0-9]+)/.exec(commit?.toString("utf8") ?? "")?.[1];
@@ -133,8 +144,5 @@ export async function versionAnchors(version: KnowledgeBaseVersion, objects: Git
       if (entry.directory && ["flows", "parts"].includes(entry.name)) await walk(entry.sha, `${entry.name}/`);
     }
   }
-  const anchors = flowAnchors(new Map([...files].sort(([a], [b]) => a.localeCompare(b))));
-  savedAnchors.set(version.source, anchors);
-  if (savedAnchors.size > 256) savedAnchors.delete(savedAnchors.keys().next().value!);
-  return anchors;
+  return flowAnchors(new Map([...files].sort(([a], [b]) => a.localeCompare(b))));
 }
