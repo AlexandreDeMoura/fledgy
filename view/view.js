@@ -535,13 +535,14 @@ function changesPage() {
     body = `${none}${groups.length ? `<div class="d-ctimeline">${groups.join('')}</div>` : ''}${noCommit}`;
   }
 
-  return `<div class="d-over" data-pane="changes" data-key="changes">
-    <div class="d-ccol">
+  // The title and the footnote stay put; the timeline between them scrolls on its own.
+  return `<div class="d-changes">
+    <div class="d-ctop"><div class="d-ccol">
       <h1 class="d-h1">Changes</h1>
       <div class="d-lead">Which ${term('flow', 'Flows')} changed, newest first.</div>
-      ${body}
-      <div class="d-cfoot"><b>What counts as a change.</b> A ${term('flow', 'Flow')} changed when the code its ${term('part', 'Parts')} point to changed. Rewording the Flow doesn’t count: nothing changed in the app. <a class="d-link" href="${GUIDE}#not-committed" target="_blank" rel="noopener">More in the guide ↗</a></div>
-    </div>
+    </div></div>
+    <div class="d-cscroll" data-pane="changes" data-key="changes"><div class="d-ccol">${body}</div></div>
+    <div class="d-cfoot"><div class="d-ccol"><b>What counts as a change.</b> A ${term('flow', 'Flow')} changed when the code its ${term('part', 'Parts')} point to changed. Rewording the Flow doesn’t count: nothing changed in the app. <a class="d-link" href="${GUIDE}#not-committed" target="_blank" rel="noopener">More in the guide ↗</a></div></div>
   </div>`;
 }
 

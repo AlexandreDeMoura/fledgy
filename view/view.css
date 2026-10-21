@@ -338,15 +338,18 @@ body { margin: 0; background: #0a0b0d; }
 .D .d-opill:hover { border-color: rgba(255, 255, 255, 0.32); }
 .D .d-oguide { margin-left: 10px; font-size: 12.5px; }
 
-/* ---------- the Changes: a timeline down the left, newest first ---------- */
-.D .d-ccol { max-width: 884px; margin: 0 auto; padding: 56px 32px 80px; }
+/* ---------- the Changes: a timeline down the left, newest first, between a title and a footnote that stay put ---------- */
+.D .d-changes { display: flex; flex-direction: column; height: 100vh; }
+.D .d-ctop, .D .d-cfoot { flex: none; }
+.D .d-cscroll { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.2) transparent; }
+.D .d-ccol { max-width: 884px; margin: 0 auto; padding: 0 32px; }
+.D .d-ctop .d-ccol { padding-top: 56px; padding-bottom: 24px; }
 .D .d-ccol .d-h1 { font-size: 28px; margin-bottom: 6px; }
 .D .d-ccol .d-lead { color: var(--ink3); }
-.D .d-ccol > .d-otext { margin-top: 32px; }
+.D .d-cscroll .d-ccol { padding-top: 12px; padding-bottom: 24px; }
 .D .d-ccol code { padding: 2px 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.07); font: 400 12.5px var(--mono); color: var(--ink); }
-.D .d-ctimeline { margin-top: 36px; }
-.D .d-ccol > .d-otext + .d-ctimeline { margin-top: 20px; }
-.D .d-ctimeline + .d-otext { margin-top: 0; }
+.D .d-ccol > .d-otext { margin-bottom: 20px; }
+.D .d-ccol > .d-otext:last-child { margin-bottom: 0; }
 .D .d-cgroup { position: relative; padding: 0 0 30px 30px; }
 /* The line joins each dot to the next one. */
 .D .d-cgroup:not(:last-child)::before { content: ''; position: absolute; left: 4px; top: 14px; bottom: -6px; width: 1px; background: rgba(255, 255, 255, 0.12); }
@@ -379,7 +382,8 @@ body { margin: 0; background: #0a0b0d; }
 .D .d-cstrip .d-term { text-decoration-color: oklch(0.82 0.12 78 / 0.5); }
 .D .d-cagain { flex: none; font-weight: 500; color: var(--amber); }
 .D .d-cagain:hover { color: oklch(0.9 0.1 78); }
-.D .d-cfoot { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 12.5px; line-height: 1.6; color: var(--dim); text-wrap: pretty; }
+.D .d-cfoot { border-top: 1px solid var(--line); font-size: 12.5px; line-height: 1.6; color: var(--dim); text-wrap: pretty; }
+.D .d-cfoot .d-ccol { padding-top: 16px; padding-bottom: 20px; }
 .D .d-cfoot b { font-weight: 500; color: var(--ink2); }
 .D .d-cfoot .d-link { margin-left: 4px; }
 
