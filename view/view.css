@@ -32,18 +32,10 @@ body { margin: 0; background: #0a0b0d; }
 .D .d-lab .d-mono { letter-spacing: 0; text-transform: none; font-size: 11px; color: var(--ink3); }
 .D .d-lab.green { color: var(--green); }
 .D .d-lab.blue { color: oklch(0.8 0.1 262); }
-.D .d-gap { margin-top: 8px; }
 .D .d-tag { flex: none; padding: 1px 6px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 4px; font: 500 9.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink3); }
 .D .d-tag.blue { color: oklch(0.8 0.1 262); border-color: oklch(0.74 0.13 262 / 0.4); }
-.D .d-tag.amber { color: var(--amber); border-color: oklch(0.82 0.12 78 / 0.4); }
-.D .d-num { flex: none; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 50%; font: 500 10px var(--mono); color: var(--ink3); }
 .D .d-h1 { font: 600 26px/1.2 'Geist', sans-serif; letter-spacing: -0.025em; margin-bottom: 8px; }
-.D .d-h1.small { font-size: 24px; margin-bottom: 6px; }
-.D .d-h2 { font: 600 20px/1.25 'Geist', sans-serif; letter-spacing: -0.015em; margin-bottom: 6px; }
-.D .d-h2.d-mono { font-family: var(--mono); font-size: 17px; letter-spacing: 0; }
 .D .d-lead { font-size: 13.5px; color: var(--ink2); max-width: 680px; text-wrap: pretty; }
-.D .d-btn { flex: none; padding: 9px 14px; background: var(--blue); color: #0b0c0e; border-radius: 7px; font: 600 13px 'Geist', sans-serif; white-space: nowrap; }
-.D .d-btn:hover { background: oklch(0.8 0.11 262); }
 .D .d-btn2 { padding: 6px 11px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 7px; font-weight: 500; font-size: 12px; }
 .D .d-btn2:hover { border-color: rgba(255, 255, 255, 0.3); }
 .D .d-link { font-weight: 500; font-size: 12px; color: oklch(0.78 0.11 262); }
@@ -54,63 +46,16 @@ body { margin: 0; background: #0a0b0d; }
 .D .d-st.s-passed { color: var(--green); }
 .D .d-st.s-failed { color: var(--red); }
 .D .d-st.s-could-not-perform { color: var(--amber); }
-.D .d-qa { flex: none; margin-left: auto; padding: 1px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); font: 500 10.5px var(--mono); color: var(--ink3); white-space: nowrap; }
-.D .d-qa.passed { color: var(--green); background: oklch(0.74 0.12 158 / 0.12); }
-.D .d-qa.failed { color: var(--red); background: oklch(0.72 0.13 25 / 0.14); }
-.D .d-qa.could-not-perform { color: var(--amber); background: oklch(0.82 0.12 78 / 0.12); }
-.D .d-qa i { font-style: normal; color: var(--amber); }
 
 /* a commit: short id, subject, when */
 .D .d-commit { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 9px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 12.5px; }
 .D .d-commit .d-mono { color: var(--ink3); }
 .D .d-when { font: 400 11px var(--mono); color: var(--dim); white-space: nowrap; }
 
-/* home */
-.D .d-home { display: flex; height: 100vh; }
-.D .d-list { flex: none; width: 470px; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #0b0c0e; }
-.D .d-listhead { padding: 30px 28px 14px; }
-.D .d-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 28px 0; }
-.D .d-filter { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px; font-weight: 500; font-size: 12px; color: #dadde2; }
-.D .d-filter:hover { border-color: rgba(255, 255, 255, 0.3); }
-.D .d-filter.on { border-color: var(--blue); background: oklch(0.74 0.13 262 / 0.1); color: var(--ink); }
-.D .d-filter span { font: 500 10.5px var(--mono); color: var(--dim); }
-.D .d-scope { padding: 10px 28px 0; font-size: 12px; color: var(--dim); text-wrap: pretty; }
-.D .d-empty { margin-top: 18px; padding: 20px 28px; border-top: 1px solid rgba(255, 255, 255, 0.05); font-size: 13px; color: var(--ink3); }
-.D .d-area { padding: 18px 28px 9px; }
-.D .d-areais { margin-top: 4px; font-size: 12px; color: var(--dim); text-wrap: pretty; }
-.D .d-row { display: block; width: 100%; padding: 13px 28px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
-.D .d-row:hover { background: rgba(255, 255, 255, 0.03); }
-.D .d-row.on { background: rgba(255, 255, 255, 0.045); box-shadow: inset 2px 0 0 var(--blue); }
-.D .d-rowt { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; font-weight: 500; font-size: 14px; line-height: 1.4; }
-.D .d-rowm { display: block; font: 400 11px var(--mono); color: #7c818b; }
-.D .d-rowc { display: block; margin-top: 5px; font-size: 12px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.D .d-rowc b { font: 500 11px var(--mono); color: var(--amber); }
-.D .d-chg { margin-top: 8px; font-size: 12px; color: var(--dim); }
-.D .d-listfoot { margin-top: auto; padding: 14px 28px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.55; color: var(--dim); }
-.D .d-listfoot b { font-weight: 500; color: var(--ink2); }
-.D .d-preview { flex: 1; min-width: 0; padding: 30px 36px 80px; }
-.D .d-pvhead { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin: 10px 0 22px; }
-.D .d-table { border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; overflow: hidden; background: var(--panel); }
-.D .d-tr { display: grid; grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr); border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-.D .d-th { background: #0b0c0e; border-bottom-color: var(--line); font: 500 9.5px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
-.D .d-th > div { padding: 9px 14px; }
-.D .d-th > div:nth-child(2) { padding-left: 0; }
-.D .d-tn { padding: 13px 0 0 14px; }
-.D .d-tc { padding: 12px 14px 12px 0; display: flex; flex-direction: column; gap: 5px; }
-.D .d-tr > div:last-child { padding-left: 14px; border-left: 1px solid rgba(255, 255, 255, 0.06); }
-.D .d-tsys { color: var(--ink2); font-size: 12.5px; }
-.D .d-tc .d-kv > div { font-size: 12.5px; }
-.D .d-tc .d-kv > span { line-height: 19px; }
-.D .d-tfoot { display: flex; align-items: baseline; gap: 12px; padding: 11px 14px; background: oklch(0.74 0.12 158 / 0.06); font-size: 12.5px; }
-.D .d-vrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 4px 16px; align-items: baseline; width: 100%; padding: 11px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-.D .d-vrow:hover { background: rgba(255, 255, 255, 0.03); }
-.D .d-vname { font-weight: 500; }
-.D .d-vwhen { color: var(--ink2); font-size: 12.5px; }
-
 .D .d-error { max-width: 720px; margin: 34px auto; padding: 14px 18px; border: 1px solid oklch(0.82 0.12 78 / 0.4); border-radius: 10px; background: oklch(0.82 0.12 78 / 0.06); }
 .D .d-error pre { margin: 8px 0 0; white-space: pre-wrap; font: 400 12px/1.5 var(--mono); color: var(--ink2); }
 
-/* does / sees pairs, used in the preview table and on the flow page */
+/* does / sees pairs, on the Flow page */
 .D .d-kv { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; }
 .D .d-kv > span { font: 500 9.5px/22px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink3); }
 
@@ -124,14 +69,6 @@ body { margin: 0; background: #0a0b0d; }
 .D .d-sincef.d-warn { color: var(--amber); }
 .D .d-rec { font: 400 11px/1.5 var(--mono); color: var(--dim); }
 .D .d-rec.d-warn { color: var(--amber); }
-
-
-/* The home page does not scroll as a whole: the written Flows scroll in their own container. */
-.D .d-home .d-list { min-height: 0; }
-.D .d-home .d-flows { flex: 1 1 0; min-height: 90px; margin-top: 14px; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.2) transparent; }
-.D .d-home .d-flows > * { flex: none; }
-.D .d-home .d-flows .d-listfoot { margin-top: auto; border-top: 0; padding-top: 22px; }
-.D .d-home .d-preview { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.2) transparent; }
 
 /* ---------- the frame: the sidebar, always in view, and the page beside it ---------- */
 .D .d-shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); height: 100vh; }
@@ -400,6 +337,51 @@ body { margin: 0; background: #0a0b0d; }
 .D .d-opill { padding: 6px 11px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 999px; font-weight: 500; font-size: 12.5px; color: var(--ink); }
 .D .d-opill:hover { border-color: rgba(255, 255, 255, 0.32); }
 .D .d-oguide { margin-left: 10px; font-size: 12.5px; }
+
+/* ---------- the Changes: a timeline down the left, newest first ---------- */
+.D .d-ccol { max-width: 884px; margin: 0 auto; padding: 56px 32px 80px; }
+.D .d-ccol .d-h1 { font-size: 28px; margin-bottom: 6px; }
+.D .d-ccol .d-lead { color: var(--ink3); }
+.D .d-ccol > .d-otext { margin-top: 32px; }
+.D .d-ccol code { padding: 2px 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.07); font: 400 12.5px var(--mono); color: var(--ink); }
+.D .d-ctimeline { margin-top: 36px; }
+.D .d-ccol > .d-otext + .d-ctimeline { margin-top: 20px; }
+.D .d-ctimeline + .d-otext { margin-top: 0; }
+.D .d-cgroup { position: relative; padding: 0 0 30px 30px; }
+/* The line joins each dot to the next one. */
+.D .d-cgroup:not(:last-child)::before { content: ''; position: absolute; left: 4px; top: 14px; bottom: -6px; width: 1px; background: rgba(255, 255, 255, 0.12); }
+.D .d-cdot { position: absolute; left: 0; top: 5px; width: 9px; height: 9px; border-radius: 50%; }
+.D .d-cdot.amber { background: var(--amber); }
+.D .d-cdot.blue { background: var(--blue); }
+.D .d-cdot.hollow { box-shadow: inset 0 0 0 1.5px var(--faint); }
+.D .d-chead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 10px; font-size: 13.5px; line-height: 1.45; }
+.D .d-chead > b { font-weight: 600; }
+.D .d-chead .d-mono { color: var(--ink3); }
+.D .d-chead .dim { font-size: 12.5px; }
+.D .d-csubj { min-width: 0; }
+.D .d-clast { margin-left: auto; font: 400 11px var(--mono); color: var(--faint); }
+.D .d-cfold { margin-left: auto; font-weight: 500; font-size: 12px; color: oklch(0.78 0.11 262); }
+.D .d-cfold:hover, .D .d-cfold:focus-visible { color: oklch(0.86 0.08 262); }
+.D .d-cdim { font-size: 12.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.D .d-cfolded { border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.D .d-cfolded .d-commit:last-child { border-bottom: 0; }
+.D .d-cfolded .d-commit > span:nth-child(2) { color: var(--ink3); }
+.D .d-ccard { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.D .d-ccard.amber { border-color: oklch(0.82 0.12 78 / 0.45); }
+.D .d-ccard > * + .d-crow { border-top: 1px solid var(--line); }
+.D .d-crow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; }
+.D .d-crow:hover { background: rgba(255, 255, 255, 0.03); }
+.D .d-crow:hover .d-oopen { color: var(--ink); }
+.D .d-cname { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-weight: 500; font-size: 14.5px; }
+.D .d-cname > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.D .d-csub { font-weight: 400; font-size: 12px; color: var(--dim); }
+.D .d-cstrip { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 0 10px 10px; padding: 9px 12px; border-radius: 7px; background: oklch(0.82 0.12 78 / 0.08); font-size: 12.5px; color: var(--amber); }
+.D .d-cstrip .d-term { text-decoration-color: oklch(0.82 0.12 78 / 0.5); }
+.D .d-cagain { flex: none; font-weight: 500; color: var(--amber); }
+.D .d-cagain:hover { color: oklch(0.9 0.1 78); }
+.D .d-cfoot { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 12.5px; line-height: 1.6; color: var(--dim); text-wrap: pretty; }
+.D .d-cfoot b { font-weight: 500; color: var(--ink2); }
+.D .d-cfoot .d-link { margin-left: 4px; }
 
 /* ---------- the words: a term on screen, and its tooltip ---------- */
 .D .d-term { text-decoration: underline dotted rgba(255, 255, 255, 0.4); text-underline-offset: 3px; text-decoration-thickness: 1px; cursor: help; }

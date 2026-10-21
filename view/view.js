@@ -7,11 +7,12 @@
 // where it lives in the code. "Check by hand" holds the path's Manual QA Check: a row per QA Step,
 // the current one open to record its result, by click or by key, and move on to the next.
 // The Overview says how many Flows are written and how many wait to be, which Flows changed since the
-// last commit and in it, and which Flows to write to start with. The Changes still show the former home
-// page, until its own page is made.
+// last commit and in it, and which Flows to write to start with. The Changes is a timeline, newest
+// first, of the Flows not committed and of those each of the last commits changed, with the QA Results
+// recorded before each change.
 // Every term on screen is underlined, and hovering or focusing it shows its sentence from the guide.
-// Everything on screen but the Areas folded in the sidebar is addressed by the URL, so any state
-// can be reloaded or shared.
+// Everything on screen but the Areas folded in the sidebar and the commits unfolded on the Changes is
+// addressed by the URL, so any state can be reloaded or shared.
 
 let DATA;
 let READ_AT = 0; // when the knowledge base was last read
@@ -127,11 +128,6 @@ function tally(fid, P) {
   for (const p of P) for (const qs of p.qa.steps) (t[result(fid, p, qs).state]++, t.all++);
   return t;
 }
-function qaChip(fid, P) {
-  const t = tally(fid, P);
-  const cls = t.failed ? 'failed' : t.passed === t.all ? 'passed' : t['could-not-perform'] ? 'could-not-perform' : '';
-  return `<span class="d-qa ${cls}">${term('qachip', `QA ${t.failed ? `${t.failed} failed` : `${t.passed}/${t.all} passed`}`, true)}</span>`;
-}
 // One square per QA Step of a path, in the colour of its result.
 const squares = (fid, p) => `<span class="d-sq">${p.qa.steps.map((qs) => `<i class="s-${result(fid, p, qs).state}"></i>`).join('')}</span>`;
 const moved = (r) => r.since && (r.since.commits.length || r.since.uncommitted);
@@ -153,11 +149,9 @@ async function post(url, body) {
   if (r.ok) DATA = sent;
 }
 
-// The Flow page states both lines even when empty; the home preview keeps only the ones that say something.
-function sides(s, compact) {
-  if (compact && !s.does && !s.sees) return `<div class="d-none">Nothing changes on screen.</div>`;
-  const line = (label, text, empty) =>
-    compact && !text ? '' : `<div class="d-kv"><span>${label}</span><div class="${text ? '' : 'd-none'}">${esc(text ?? empty)}</div></div>`;
+// A Step states both lines, even when one is empty.
+function sides(s) {
+  const line = (label, text, empty) => `<div class="d-kv"><span>${label}</span><div class="${text ? '' : 'd-none'}">${esc(text ?? empty)}</div></div>`;
   return line('Does', s.does, 'Nothing.') + line('Sees', s.sees, 'Nothing changes on screen.');
 }
 
@@ -316,7 +310,7 @@ function sidebar(fid) {
     </div>
     <nav class="d-snav">
       <a class="d-snavi ${page === 'overview' ? 'on' : ''}" href="/">${icon('<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>')}Overview</a>
-      <a class="d-snavi ${page === 'changes' ? 'on' : ''}" href="/?page=changes&show=10">${icon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="6.5" r="1.5"/><path d="M4.5 5v6M11.5 8c0 2-2 2.5-5 3.5"/>')}Changes${
+      <a class="d-snavi ${page === 'changes' ? 'on' : ''}" href="/?page=changes">${icon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="6.5" r="1.5"/><path d="M4.5 5v6M11.5 8c0 2-2 2.5-5 3.5"/>')}Changes${
         uncommitted ? `<span class="d-badge" title="${plural(uncommitted, 'Flow')} not committed">${uncommitted}</span>` : ''
       }</a>
     </nav>
@@ -441,177 +435,113 @@ function overview() {
   </div>`;
 }
 
-// ---------- the former home page: Flows grouped by Area, with a preview ----------
-// Shown as the Changes until its own page is made.
+// ---------- the Changes: which Flows changed, newest first ----------
+// A timeline: what is not committed, then each of the last commits. The commits in a row that changed
+// no Flow fold into one group.
 
-const FILTERS = [
-  ['', 'All'],
-  ['uncommitted', 'Not committed'],
-  ['1', 'Last commit'],
-  ['3', 'Last 3 commits'],
-  ['10', 'Last 10 commits'],
-];
-// The Flows a filter keeps: all of them, the ones with changes that are not committed,
-// or the ones changed by one of the branch's last n commits.
-function matching(show) {
-  const ids = Object.keys(DATA.flows);
-  if (!show) return ids;
-  if (show === 'uncommitted') return ids.filter((id) => changes(id).uncommitted);
-  const touched = new Set(DATA.changes.recent.slice(0, +show).flatMap((c) => c.flows));
-  return ids.filter((id) => touched.has(id));
+const FOLDS = new Set(); // the newest sha of each fold of commits the Builder unfolded
+const dayOf = (date) => {
+  const d = new Date(date);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
+};
+// “an Admin”, but “a User”: a name that starts with a vowel sounded as “you” or “one” takes “a”.
+const withArticle = (name) => (/^(a|an|the)\s/i.test(name) ? name : `${/^[aeiou]/i.test(name) && !/^(us|uni|eu|one)/i.test(name) ? 'an' : 'a'} ${name}`);
+
+// The newest change made after a QA Result was recorded: 'uncommitted', a commit's sha, or nothing.
+function newestChange(r) {
+  if (!moved(r)) return null;
+  if (r.since.uncommitted) return 'uncommitted';
+  const shas = new Set(r.since.commits.map((c) => c.sha));
+  return DATA.changes.recent.find((c) => shas.has(c.sha))?.sha ?? r.since.commits[0]?.sha ?? null;
+}
+// A Flow changed by `at`, and under it a strip for each path whose results were recorded before that change.
+// A result shows only at the newest change since it, so it is said once on the page.
+function changedRow(fid, at) {
+  const f = DATA.flows[fid];
+  const strips = f.paths.flatMap((p) => {
+    const n = p.qa.steps.filter((qs) => newestChange(result(fid, p, qs)) === at).length;
+    if (!n) return [];
+    const on = p.id === 'main' ? `its ${term('mainpath', 'Main path')}` : `its ${term('variant', 'Variant')} “${esc(p.name)}”`;
+    return `<div class="d-cstrip"><span>↻ ${n} ${term('qachip', n === 1 ? 'QA result' : 'QA results')} on ${on} ${n === 1 ? 'was' : 'were'} recorded before this change.</span>
+      <a class="d-cagain" href="${esc(flowHref(fid, { path: p.id === 'main' ? null : p.id, tab: 'check' }))}">Check again →</a></div>`;
+  });
+  return `<a class="d-crow" href="${esc(flowHref(fid))}">
+      <span class="d-cname"><span>${esc(f.name)}</span><span class="d-csub">${esc(areaName(areaOf(fid)))} · done by ${esc(withArticle(actorName(f)))}</span></span>
+      <span class="d-oopen">Open →</span>
+    </a>${strips.join('')}`;
 }
 
-function home() {
-  const flows = DATA.flows;
-  const areas = DATA.areas;
-  const show = FILTERS.some(([k]) => k === q('show')) ? q('show') : '';
-  const kept = matching(show);
-  const scope = +show ? DATA.changes.recent.slice(0, +show) : [];
-  const lastN = scope.length === 1 ? 'the last commit' : `the last ${scope.length} commits`;
-  // Under a filter only the Areas with a Flow it keeps; otherwise every Area, even one with no Flow yet.
-  const areaIds = [...new Set([...Object.keys(areas), ...kept.map(areaOf)])].filter((aid) => !show || kept.some((id) => areaOf(id) === aid));
-  // The Flows in the order of their rows, so the preview starts on the first row.
-  const ids = areaIds.flatMap((aid) => kept.filter((id) => areaOf(id) === aid));
-  const pv = ids.includes(q('pv')) ? q('pv') : ids[0];
+function changesPage() {
+  const recent = DATA.changes.recent;
+  const uncommitted = (DATA.changes.uncommitted?.flows ?? []).filter((id) => DATA.flows[id]);
+  const changed = (c) => c.flows.filter((id) => DATA.flows[id]);
+  const group = (dot, head, body) => `<section class="d-cgroup"><i class="d-cdot ${dot}"></i><div class="d-chead">${head}</div>${body}</section>`;
 
-  // A click selects the row for the preview; a click on the selected row opens the Flow.
-  const row = (id) => {
-    const f = flows[id];
-    const on = pv === id;
-    const last = changes(id).last;
-    return `<button class="d-row ${on ? 'on' : ''}" ${on ? `data-go="${esc(flowHref(id))}"` : set({ pv: id })}>
-      <span class="d-rowt"><span>${esc(f.name)}</span>${changes(id).uncommitted ? `<span class="d-tag amber">${term('uncommitted', 'Not committed', true)}</span>` : ''}${qaChip(id, f.paths)}</span>
-      <span class="d-rowm">${esc(actorName(f))} · ${plural(f.paths[0].steps.length, 'step')} · ${term('variant', plural(f.paths.length - 1, 'Variant'), true)}${last ? ` · changed ${esc(ago(last.date))}` : ''}</span>
-      ${scope
-        .filter((c) => c.flows.includes(id))
-        .map((c) => `<span class="d-rowc">changed in <b>${esc(short(c))}</b> ${esc(c.subject)}</span>`)
-        .join('')}
-    </button>`;
-  };
-
-  const list =
-    ids.length || (!show && areaIds.length)
-      ? areaIds
-          .map((aid) => {
-            const inArea = ids.filter((id) => areaOf(id) === aid);
-            const area = areas[aid];
-            return `<div class="d-area">
-          <div class="d-lab">${esc(areaName(aid))} · ${plural(inArea.length, 'Flow')}${area ? '' : ` · <span class="d-warn">${aid ? 'Area not in areas.yaml' : 'These Flows name no Area'}</span>`}</div>
-          ${area ? `<div class="d-areais">${esc(area.is)}</div>` : ''}
-        </div>${inArea.map(row).join('')}`;
-          })
-          .join('')
-      : `<div class="d-empty">${
-          !show
-            ? 'Nothing mapped yet. In Claude Code, type <span class="d-mono">/map-the-app</span>.'
-            : show === 'uncommitted'
-              ? 'No Flow has changes that are not committed.'
-              : scope.length === 0
-                ? 'This branch has no commit yet.'
-                : scope.length === 1
-                  ? 'The last commit did not change a Flow.'
-                  : `None of ${lastN} changed a Flow.`
-        }</div>`;
-
-  let preview;
-  if (flows[pv]) {
-    const f = flows[pv];
-    const [main, ...variants] = f.paths;
-    const { uncommitted, last } = changes(pv);
-    preview = `<div class="d-lab">Preview · ${esc(areaName(areaOf(pv)))}</div>
-      <div class="d-pvhead">
-        <div>
-          <div class="d-h2">${esc(f.name)}</div>
-          <div class="d-lead">${esc(f.goal)}</div>
-          <div class="d-chg">${uncommitted ? '<span class="d-warn">Has changes that are not committed.</span> ' : ''}${
-            last ? `Last commit to change it: <span class="d-mono">${esc(short(last))}</span> ${esc(last.subject)}, ${esc(ago(last.date))}.` : 'No commit has changed it.'
-          }</div>
-        </div>
-        <a class="d-btn" href="${esc(flowHref(pv))}">Open Flow →</a>
-      </div>
-      <div class="d-table">
-        <div class="d-tr d-th"><div></div><div>${esc(actorName(f))}</div><div>${term('system', 'System')}</div></div>
-        ${main.steps
-          .map(
-            (s, i) => `<div class="d-tr">
-              <div class="d-tn"><span class="d-num">${i + 1}</span></div>
-              <div class="d-tc">${sides(s, true)}</div>
-              <div class="d-tc d-tsys ${s.system ? '' : 'd-none'}">${esc(s.system ?? 'Nothing.')}</div>
-            </div>`
-          )
-          .join('')}
-        <div class="d-tfoot"><span class="d-lab green">Outcome</span>${esc(main.outcome)}</div>
-      </div>
-      ${
-        variants.length
-          ? `<div class="d-lab d-gap">${term('variant', plural(variants.length, 'Variant'))}</div>
-        <div class="d-table">${variants
-          .map(
-            (p) => `<a class="d-vrow" href="${esc(flowHref(pv, { path: p.id }))}">
-              <span class="d-vname">${esc(p.name)}</span>
-              <span class="d-vwhen">${esc(p.when)}</span>
-              <span class="d-rowm">${p.divergesAt == null ? '' : `leaves the main path at step ${p.divergesAt + 1}`}</span>
-            </a>`
-          )
-          .join('')}</div>`
-          : ''
-      }`;
-  } else if (show) {
-    preview = `<div class="d-lab">Nothing to show</div>
-      <div class="d-pvhead"><div>
-        <div class="d-h2">No Flow matches</div>
-        <div class="d-lead">${
-          scope.length
-            ? `${scope.length === 1 ? 'This is the last commit' : `These are ${lastN}`} on this branch. ${scope.length === 1 ? 'It did not change' : 'None of them changed'} a Flow.`
-            : show === 'uncommitted'
-              ? 'Every Flow is the same as in the last commit.'
-              : 'This branch has no commit yet.'
-        }</div>
-      </div></div>
-      ${scope.length ? `<div class="d-table">${scope.map(commitRow).join('')}</div>` : ''}`;
-  } else {
-    // No Flow written: what to do next, whether the Areas are there yet or not.
-    const some = Object.keys(areas).length;
-    preview = `<div class="d-lab">Nothing to show</div>
-      <div class="d-pvhead"><div>
-        <div class="d-h2">${some ? 'No Flow written yet' : 'Nothing mapped yet'}</div>
-        <div class="d-lead">${
-          some
-            ? 'The Areas and the Flows to write are listed on the left. In Claude Code, type <span class="d-mono">/map-the-app</span> to carry on: Fledgy writes the Flows with you, one Area at a time.'
-            : 'In Claude Code, type <span class="d-mono">/map-the-app</span>. Fledgy reads your code, proposes the Areas it sees for you to correct, then writes their Flows with you, one Area at a time. This page fills in as it goes.'
-        }</div>
-        <div class="d-chg"><a class="d-link" href="${GUIDE}" target="_blank" rel="noopener">New to the words? Read the guide →</a></div>
-      </div></div>`;
+  const groups = [];
+  if (uncommitted.length)
+    groups.push(
+      group(
+        'amber',
+        `<b>${term('uncommitted', 'Not committed')}</b><span class="dim">on your computer, now · ${plural(uncommitted.length, 'Flow')}</span>`,
+        `<div class="d-ccard amber">${uncommitted.map((id) => changedRow(id, 'uncommitted')).join('')}</div>`
+      )
+    );
+  for (let i = 0; i < recent.length; ) {
+    const c = recent[i];
+    const flows = changed(c);
+    if (flows.length) {
+      groups.push(
+        group(
+          'blue',
+          `<span class="d-mono" title="${esc(c.sha)}">${esc(short(c))}</span><b class="d-csubj">${esc(c.subject)}</b><span class="dim">${esc(ago(c.date))} · ${plural(flows.length, 'Flow')}</span>${
+            i === 0 ? '<span class="d-clast">last commit</span>' : ''
+          }`,
+          `<div class="d-ccard">${flows.map((id) => changedRow(id, c.sha)).join('')}</div>`
+        )
+      );
+      i++;
+      continue;
+    }
+    // The commits from here that changed no Flow, newest first.
+    let j = i;
+    while (j < recent.length && !changed(recent[j]).length) j++;
+    const run = recent.slice(i, j);
+    const open = FOLDS.has(run[0].sha);
+    const [newest, oldest] = [dayOf(run[0].date), dayOf(run.at(-1).date)];
+    const subjects = run.slice(0, 3).map((x) => esc(x.subject));
+    groups.push(
+      group(
+        'hollow',
+        `<b>${run.length === 1 ? '1 commit' : `${run.length} commits`} changed no ${term('flow', 'Flow')}</b><span class="dim">${newest === oldest ? newest : `${oldest} – ${newest}`}</span>
+         <button class="d-cfold" data-fold="${esc(run[0].sha)}" aria-expanded="${open}">${open ? 'Hide ▴' : 'Show ▾'}</button>`,
+        open
+          ? `<div class="d-cfolded">${run.map(commitRow).join('')}</div>`
+          : `<div class="d-cdim">${subjects.join(' · ')}${run.length > 3 ? ` and ${run.length - 3} more` : ''}</div>`
+      )
+    );
+    i = j;
   }
 
-  // With no Flow written there is nothing to filter, and no change to explain.
-  const written = Object.keys(flows).length > 0;
-  return `<div class="d-home">
-    <div class="d-list">
-      <div class="d-listhead">
-        <div class="d-h1">${show ? 'Changes' : 'What the app does'}</div>
-        <div class="d-lead">Every ${term('flow', 'Flow')} in the knowledge base, grouped by ${term('area', 'Area')}.</div>
-      </div>
-      ${
-        written
-          ? `<div class="d-filters">${FILTERS.map(
-              ([k, label]) => `<button class="d-filter ${k === show ? 'on' : ''}" ${set({ show: k || null, pv: null })}>${label}<span>${matching(k).length}</span></button>`
-            ).join('')}</div>`
-          : ''
-      }
-      ${
-        show === 'uncommitted'
-          ? '<div class="d-scope">Flows whose code has changes that are not committed, staged or not.</div>'
-          : scope.length
-            ? `<div class="d-scope">Flows changed in ${lastN} on this branch, back to <span class="d-mono">${esc(short(scope.at(-1)))}</span> (${esc(ago(scope.at(-1).date))}).</div>`
-            : ''
-      }
-      <div class="d-flows" data-pane="flows" data-key="${esc(show)}">
-        ${list}
-        ${written ? '<div class="d-listfoot"><b>What counts as a change.</b> A Flow changed when the code its Parts point to changed. Rewording the Flow doesn’t count: nothing changed in the app.</div>' : ''}
-      </div>
+  let body;
+  if (!Object.keys(DATA.flows).length)
+    body = '<p class="d-otext">No Flow is written yet, so no change can show here. In Claude Code, type <code>/map-the-app</code>.</p>';
+  else {
+    // Said plainly when nothing changed a Flow, above the commits; with no commit at all, below what is not committed.
+    const none =
+      recent.length && !uncommitted.length && !recent.some((c) => changed(c).length)
+        ? `<p class="d-otext">${recent.length === 1 ? 'The last commit did not change a Flow.' : `None of the last ${recent.length} commits changed a Flow.`}</p>`
+        : '';
+    const noCommit = recent.length ? '' : `<p class="d-otext">This branch has no commit yet.${uncommitted.length ? '' : ' No Flow has changes that are not committed.'}</p>`;
+    body = `${none}${groups.length ? `<div class="d-ctimeline">${groups.join('')}</div>` : ''}${noCommit}`;
+  }
+
+  return `<div class="d-over" data-pane="changes" data-key="changes">
+    <div class="d-ccol">
+      <h1 class="d-h1">Changes</h1>
+      <div class="d-lead">Which ${term('flow', 'Flows')} changed, newest first.</div>
+      ${body}
+      <div class="d-cfoot"><b>What counts as a change.</b> A ${term('flow', 'Flow')} changed when the code its ${term('part', 'Parts')} point to changed. Rewording the Flow doesn’t count: nothing changed in the app. <a class="d-link" href="${GUIDE}#not-committed" target="_blank" rel="noopener">More in the guide ↗</a></div>
     </div>
-    <div class="d-preview" data-pane="preview" data-key="${esc(pv ?? '')}">${preview}</div>
   </div>`;
 }
 
@@ -967,9 +897,9 @@ function render() {
   const kept = Object.fromEntries([...document.querySelectorAll('[data-pane]')].map((el) => [el.dataset.pane, { key: el.dataset.key, top: el.scrollTop }]));
   const searching = document.activeElement?.matches?.('[data-search]');
   const fid = DATA.flows[q('flow')] ? q('flow') : null;
-  document.title = fid ? `${DATA.flows[fid].name} · Fledgy` : `Fledgy · ${DATA.repo.name}`;
+  document.title = fid ? `${DATA.flows[fid].name} · Fledgy` : q('page') === 'changes' ? `Changes · Fledgy · ${DATA.repo.name}` : `Fledgy · ${DATA.repo.name}`;
   hideTip();
-  app.innerHTML = `<div class="d-shell">${sidebar(fid)}<main class="d-main">${fid ? flowPage(fid) : q('page') === 'changes' ? home() : overview()}</main></div>${twPopover()}`;
+  app.innerHTML = `<div class="d-shell">${sidebar(fid)}<main class="d-main">${fid ? flowPage(fid) : q('page') === 'changes' ? changesPage() : overview()}</main></div>${twPopover()}`;
   for (const el of document.querySelectorAll('[data-pane]')) if (kept[el.dataset.pane]?.key === el.dataset.key) el.scrollTop = kept[el.dataset.pane].top;
   if (searching) {
     const input = app.querySelector('[data-search]');
@@ -1011,7 +941,7 @@ document.addEventListener('click', async (e) => {
     if (a.matches('[data-found]')) clearSearch();
     return go(a.getAttribute('href'));
   }
-  const t = e.target.closest('[data-set],[data-go],[data-result],[data-reset],[data-area],[data-twlist],[data-tw],[data-copy]');
+  const t = e.target.closest('[data-set],[data-result],[data-reset],[data-area],[data-twlist],[data-tw],[data-copy],[data-fold]');
   if (!t) return;
   if (t.dataset.area != null) {
     const open = t.getAttribute('aria-expanded') === 'true';
@@ -1023,11 +953,14 @@ document.addEventListener('click', async (e) => {
     return render();
   }
   if (t.dataset.tw != null) return openToWrite(t.dataset.tw);
+  if (t.dataset.fold != null) {
+    FOLDS.has(t.dataset.fold) ? FOLDS.delete(t.dataset.fold) : FOLDS.add(t.dataset.fold);
+    return render();
+  }
   if (t.dataset.copy != null) {
     const done = () => (t.textContent = 'Copied');
     return navigator.clipboard?.writeText(t.dataset.copy).then(done, () => (t.textContent = 'Select and copy it'));
   }
-  if (t.dataset.go) return go(t.dataset.go);
   if (t.dataset.set) setQ(JSON.parse(t.dataset.set));
   if (t.dataset.reset) await post('/api/result-reset', JSON.parse(t.dataset.reset));
   else if (t.dataset.result) {

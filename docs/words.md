@@ -42,7 +42,7 @@ A Flow listed now and written later: the app has it, but nobody has described it
 
 In Settings, *Export your data*: “Someone asks for an export of their chats, and gets an email with a link to download it.”
 
-Good to know: a Flow to write is only a name and one sentence. It has no Steps, no [Manual QA Check](#manual-qa-check), and nothing that points to the code. The web view lists them under “To write”, and its change filters skip them. It stops being one the moment its Flow is written.
+Good to know: a Flow to write is only a name and one sentence. It has no Steps, no [Manual QA Check](#manual-qa-check), and nothing that points to the code. The web view lists them under “To write”. With nothing that points to the code, they never show on its Changes page. It stops being one the moment its Flow is written.
 
 ### Actor
 
