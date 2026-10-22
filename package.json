@@ -21,7 +21,7 @@
   "author": "Alexandre de Moura",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AlexandreDeMoura/fledgy"
+    "url": "git+https://github.com/AlexandreDeMoura/fledgy.git"
   },
   "type": "module",
   "bin": {
@@ -55,5 +55,6 @@
     "tree-sitter-typescript": "0.23.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.3"
-  }
+  },
+  "homepage": "https://fledgy.dev"
 }
