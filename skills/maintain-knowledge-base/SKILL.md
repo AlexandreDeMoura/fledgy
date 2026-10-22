@@ -138,3 +138,12 @@ variants:
 ## The words
 
 Write for the Builder: plain sentences about what happens, naming things as they appear on screen. File names, function names and other code identifiers belong in an Anchor's `at`, nowhere else.
+
+### A Step's `does` and `sees`
+
+The Builder reads a Step with the app open beside it, to check that what they see by hand is what the knowledge base says. Each field is quick to scan: one sentence, two short ones at most.
+
+- `does` is the Actor's action, opening on the verb, with buttons and fields named as on screen: "Clicks Approve." Alternatives and optional actions share the sentence: "Types a name and instructions, and may add a description."
+- `sees` is what confirms the Step happened: the page that opened, or what appeared, changed or became clickable. A page is named with the one or two things that identify it; labels and messages are quoted as the code has them. "The new agent page opens empty: a name field and an Instructions tab on the left, empty TOOLS, SKILLS and SUBAGENTS on the right."
+- `sees` and the `expect` of the QA Step that checks it describe the same thing.
+- What the Actor could do next goes in the Step where they do it; what appears only after another action goes in its own Step, Variant or QA Step; what another Flow covers stays in that Flow.
