@@ -172,19 +172,58 @@ test("a file that is not valid YAML is reported by name, and read again once it 
   expect((await data()).flows["approve-a-tool-call"].name).toBe("Approve a tool call");
 });
 
-test("the page is served with its script and its stylesheet, and nothing else", async () => {
+test("the page is served with its script, its stylesheet and its themes, and nothing else", async () => {
   const { get } = await view({ "knowledge-base/flows/approve-a-tool-call.yaml": flow });
 
   const page = await get("/");
   const script = await get("/view.js");
   const styles = await get("/view.css");
+  const themes = await get("/themes.css");
 
   expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
-  expect(await page.text()).toContain('<script src="/view.js">');
+  const html = await page.text();
+  expect(html).toContain('<script src="/view.js">');
+  expect(html.indexOf('href="/themes.css"')).toBeGreaterThan(-1);
+  expect(html.indexOf('href="/themes.css"')).toBeLessThan(html.indexOf('href="/view.css"'));
   expect(script.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
   expect(script.status).toBe(200);
   expect(styles.headers.get("content-type")).toBe("text/css; charset=utf-8");
   expect(styles.status).toBe(200);
+  expect(themes.headers.get("content-type")).toBe("text/css; charset=utf-8");
+  expect(themes.status).toBe(200);
   expect((await get("/../package.json")).status).toBe(404);
   expect((await get("/view.ts")).status).toBe(404);
+});
+
+// The page's colours live in themes.css, so a theme changes colours and never layout or fonts.
+// Reads a stylesheet of the page, without its comments.
+const pageFile = (name: string) =>
+  fs.readFileSync(new URL(`../view/${name}`, import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const tokensSet = (css: string) => new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
+const block = (css: string, selector: string) => css.match(new RegExp(`${selector}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+
+test("the stylesheet names no colour: every colour comes from a theme", () => {
+  const colour = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|oklch|oklab|lab|lch|color|color-mix)\(|(?<![\w-])(?:white|black)(?![\w-])/gi;
+
+  expect(pageFile("view.css").match(colour)).toBeNull();
+});
+
+test("every token the stylesheet uses is set by the stylesheet or by the default theme", () => {
+  const styles = pageFile("view.css");
+  const used = new Set([...styles.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
+  const set = new Set([...tokensSet(styles), ...tokensSet(pageFile("themes.css"))]);
+
+  expect([...used].filter((token) => !set.has(token))).toEqual([]);
+});
+
+test("every other theme sets every colour the default theme sets", () => {
+  const themes = pageFile("themes.css");
+  const colours = tokensSet(block(themes, ":root"));
+  const others = [...themes.matchAll(/:root\[data-theme="([\w-]+)"\]\s*\{([^}]*)\}/g)];
+
+  expect(colours.size).toBeGreaterThan(0);
+  for (const [, name, body] of others) {
+    const set = tokensSet(body);
+    expect([...colours].filter((token) => !set.has(token)), `the ${name} theme`).toEqual([]);
+  }
 });

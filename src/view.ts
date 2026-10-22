@@ -22,6 +22,7 @@ const served: Record<string, [file: string, type: string]> = {
   "/": ["index.html", "text/html"],
   "/view.js": ["view.js", "text/javascript"],
   "/view.css": ["view.css", "text/css"],
+  "/themes.css": ["themes.css", "text/css"],
 };
 
 export type View = { url: string; close: () => Promise<void> };

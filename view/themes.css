@@ -1,0 +1,86 @@
+/* The colours of the web view. A theme changes colours only: layout and fonts stay in view.css,
+   which names no colour of its own.
+
+   Blue marks what is selected, green what passed, red what failed, amber what could not be
+   performed, what changed and what is wrong.
+
+   Dark is the default theme. Another theme is a block that sets every colour of the first block
+   again, under its own name, and is turned on by that name on <html>:
+
+     :root[data-theme="light"] { color-scheme: light; --bg: #fff; ... }
+     <html data-theme="light">
+
+   It has to be on <html>, not on #app: the tints at the end are worked out there, from that
+   theme's colours. A test checks that each theme sets every colour of the first block. */
+
+:root {
+  color-scheme: dark;
+
+  /* surfaces, from the page up */
+  --bg: #0a0b0d; /* the page */
+  --bg-side: #0b0c0e; /* the sidebar, the code beside a Part */
+  --panel: #0d0f11; /* cards and panels on the page */
+  --panel-current: #0f1216; /* the QA Step being checked */
+  --panel-hover: #111317;
+  --raised: #14171c; /* what opens over the page: search results, a Flow to write */
+  --tip-bg: #1b1f26; /* a term's tooltip */
+  --shadow: rgb(0 0 0 / 0.55);
+
+  /* text, strongest first */
+  --ink: #edeef0;
+  --ink2: #c4c8d0;
+  --not-checked: #b4b9c2; /* a QA Step not checked yet */
+  --ink3: #a6acb8;
+  --dim: #8a8f99;
+  --faint: #6b707a;
+  --sep: #3a3e45; /* the slash between Fledgy and the app's name */
+  --on-accent: #0b0c0e; /* text on a blue fill */
+  --selection: oklch(0.5 0.14 262);
+  --selection-ink: #fff;
+
+  /* ink laid thin over a surface: fills, lines and underlines, faintest first */
+  --hover-soft: rgb(255 255 255 / 0.03);
+  --hover: rgb(255 255 255 / 0.04);
+  --well: rgb(255 255 255 / 0.05); /* a command to copy */
+  --active: rgb(255 255 255 / 0.07);
+  --selected: rgb(255 255 255 / 0.08);
+  --line-faint: rgb(255 255 255 / 0.05);
+  --line: rgb(255 255 255 / 0.07); /* dividers */
+  --border-soft: rgb(255 255 255 / 0.09); /* panels */
+  --border: rgb(255 255 255 / 0.12); /* cards, inputs */
+  --border-strong: rgb(255 255 255 / 0.16); /* buttons, chips, what opens over the page */
+  --border-ring: rgb(255 255 255 / 0.22); /* Step numbers */
+  --border-bold: rgb(255 255 255 / 0.3); /* a border hovered */
+  --scrollbar: rgb(255 255 255 / 0.2);
+  --underline-soft: rgb(255 255 255 / 0.25);
+  --underline: rgb(255 255 255 / 0.4);
+
+  /* the four colours, and their text on the page */
+  --blue: oklch(0.74 0.13 262);
+  --blue-ink: oklch(0.8 0.1 262);
+  --blue-ink-bright: oklch(0.86 0.08 262);
+  --green: oklch(0.74 0.12 158);
+  --red: oklch(0.72 0.13 25);
+  --amber: oklch(0.82 0.12 78);
+  --amber-ink-bright: oklch(0.9 0.1 78);
+}
+
+/* Tints of the four colours, shared by every theme: they follow its colours. A theme may still
+   set any of them itself. */
+:root {
+  --blue-wash: color-mix(in oklab, var(--blue) 7%, transparent);
+  --blue-fill: color-mix(in oklab, var(--blue) 10%, transparent);
+  --blue-border: color-mix(in oklab, var(--blue) 40%, transparent);
+  --blue-border-strong: color-mix(in oklab, var(--blue) 60%, transparent);
+  --green-wash: color-mix(in oklab, var(--green) 7%, transparent);
+  --green-fill: color-mix(in oklab, var(--green) 15%, transparent);
+  --green-border: color-mix(in oklab, var(--green) 45%, transparent);
+  --green-border-strong: color-mix(in oklab, var(--green) 60%, transparent);
+  --red-wash: color-mix(in oklab, var(--red) 6%, transparent);
+  --red-fill: color-mix(in oklab, var(--red) 15%, transparent);
+  --red-border: color-mix(in oklab, var(--red) 50%, transparent);
+  --amber-wash: color-mix(in oklab, var(--amber) 7%, transparent);
+  --amber-fill: color-mix(in oklab, var(--amber) 15%, transparent);
+  --amber-border: color-mix(in oklab, var(--amber) 45%, transparent);
+  --amber-border-strong: color-mix(in oklab, var(--amber) 75%, transparent);
+}
