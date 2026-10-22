@@ -11,7 +11,7 @@
 // first, of the Flows not committed and of those each of the last commits changed, with the QA Results
 // recorded before each change.
 // Every term on screen is underlined, and hovering or focusing it shows its sentence from the guide.
-// Everything on screen but the Areas folded in the sidebar and the commits unfolded on the Changes is
+// Everything on screen but the theme, the Areas folded in the sidebar and the commits unfolded on the Changes is
 // addressed by the URL, so any state can be reloaded or shared.
 
 let DATA;
@@ -32,6 +32,35 @@ function go(href) {
   render();
 }
 window.addEventListener('popstate', () => render());
+
+// The theme: dark, light, or whichever the system uses. Dark is the default. The choice is kept in
+// this browser, not in the URL, since it is how the Builder likes to see the view, not what it shows.
+const THEMES = ['system', 'light', 'dark'];
+const lightSystem = matchMedia('(prefers-color-scheme: light)');
+function savedTheme() {
+  try {
+    const t = localStorage.getItem('fledgy-theme');
+    return THEMES.includes(t) ? t : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+function applyTheme() {
+  const t = savedTheme();
+  const light = t === 'light' || (t === 'system' && lightSystem.matches);
+  // Dark is the stylesheet's default, so it needs no name on <html>.
+  if (light) document.documentElement.dataset.theme = 'light';
+  else delete document.documentElement.dataset.theme;
+}
+function pickTheme(t) {
+  try {
+    localStorage.setItem('fledgy-theme', t);
+  } catch {}
+  applyTheme();
+}
+applyTheme();
+lightSystem.addEventListener('change', applyTheme);
+
 const flowHref = (fid, extra = {}) => {
   const u = new URLSearchParams({ flow: fid });
   for (const [k, v] of Object.entries(extra)) if (v != null) u.set(k, v);
@@ -316,8 +345,20 @@ function sidebar(fid) {
     </nav>
     <div class="d-lab d-slab">${term('area', 'Areas')}</div>
     <div class="d-sareas">${areas.length ? areas.map(area).join('') : '<div class="d-snone">Nothing mapped yet.</div>'}</div>
-    <div class="d-sfoot"><div><i class="d-dot"></i>${term('live', 'Live from knowledge-base/')}</div><div class="d-mono dim" data-read>${readAgo()}</div></div>
+    <div class="d-sfoot"><div><i class="d-dot"></i>${term('live', 'Live from knowledge-base/')}</div><div class="d-mono dim" data-read>${readAgo()}</div>${themeSwitch(icon)}</div>
   </aside>`;
+}
+
+// Three buttons at the foot of the sidebar: follow the system, light, dark.
+function themeSwitch(icon) {
+  const theme = savedTheme();
+  const choice = (t, label, d) =>
+    `<button class="${t === theme ? 'on' : ''}" data-theme-pick="${t}" aria-pressed="${t === theme}" title="${label}" aria-label="${label}">${icon(d)}</button>`;
+  return `<div class="d-theme"><span>Theme</span><div class="d-seg" role="group" aria-label="Theme">
+    ${choice('system', 'Follow the system', '<rect x="2" y="2.75" width="12" height="8" rx="1.5"/><path d="M8 10.75v2.5M5.5 13.25h5"/>')}
+    ${choice('light', 'Light', '<circle cx="8" cy="8" r="2.75"/><path d="M8 1.5v1.25M8 13.25v1.25M1.5 8h1.25M13.25 8h1.25M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/>')}
+    ${choice('dark', 'Dark', '<path d="M8 2.25a4 4 0 0 0 5.75 5.75 5.75 5.75 0 1 1-5.75-5.75Z"/>')}
+  </div></div>`;
 }
 
 // A Flow to write, opened from the sidebar, the search or a precondition: what it is, who waits for it, how to write it.
@@ -942,8 +983,12 @@ document.addEventListener('click', async (e) => {
     if (a.matches('[data-found]')) clearSearch();
     return go(a.getAttribute('href'));
   }
-  const t = e.target.closest('[data-set],[data-result],[data-reset],[data-area],[data-twlist],[data-tw],[data-copy],[data-fold]');
+  const t = e.target.closest('[data-set],[data-result],[data-reset],[data-area],[data-twlist],[data-tw],[data-copy],[data-fold],[data-theme-pick]');
   if (!t) return;
+  if (t.dataset.themePick != null) {
+    pickTheme(t.dataset.themePick);
+    return render();
+  }
   if (t.dataset.area != null) {
     const open = t.getAttribute('aria-expanded') === 'true';
     EXPANDED.set(t.dataset.area, !open);

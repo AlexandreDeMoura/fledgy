@@ -119,6 +119,14 @@ body { margin: 0; background: var(--bg); }
 .D .d-sfoot > div:first-child { display: flex; align-items: center; gap: 8px; }
 .D .d-sfoot .d-mono { padding-left: 14px; font-size: 10.5px; }
 .D .d-sareas { padding-bottom: 18px; }
+/* the theme switch, at the foot of the sidebar */
+.D .d-theme { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 11px; padding-top: 12px; border-top: 1px solid var(--line); }
+.D .d-seg { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; }
+.D .d-seg button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 24px; border: 1px solid transparent; border-radius: 6px; color: var(--dim); transition: color 0.15s, background 0.15s; }
+.D .d-seg button:hover { color: var(--ink); background: var(--hover); }
+.D .d-seg button.on { color: var(--ink); background: var(--blue-fill); border-color: var(--blue-border); }
+.D .d-seg button:focus-visible { box-shadow: 0 0 0 2px var(--blue-border-strong); }
+.D .d-seg svg { width: 14px; height: 14px; }
 
 /* a Flow to write, opened beside the sidebar */
 .D .d-pop { position: fixed; z-index: 50; left: 256px; width: 392px; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 16px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--raised); box-shadow: 0 18px 50px var(--shadow); }

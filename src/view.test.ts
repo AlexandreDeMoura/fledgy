@@ -216,6 +216,10 @@ test("every token the stylesheet uses is set by the stylesheet or by the default
   expect([...used].filter((token) => !set.has(token))).toEqual([]);
 });
 
+test("there is a light theme beside the default dark one", () => {
+  expect(pageFile("themes.css")).toMatch(/:root\[data-theme="light"\]\s*\{/);
+});
+
 test("every other theme sets every colour the default theme sets", () => {
   const themes = pageFile("themes.css");
   const colours = tokensSet(block(themes, ":root"));
