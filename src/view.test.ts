@@ -195,6 +195,21 @@ test("the page is served with its script, its stylesheet and its themes, and not
   expect((await get("/view.ts")).status).toBe(404);
 });
 
+test("the web view serves all of its presentation assets locally", async () => {
+  const { get } = await view({});
+  const html = await (await get("/")).text();
+  const assets = [...html.matchAll(/<(?:link|script)\b[^>]*(?:href|src)="([^"]+)"/g)].map((match) => match[1]);
+
+  expect(assets.length).toBeGreaterThan(0);
+  for (const asset of assets) {
+    expect(asset).toMatch(/^\/(?!\/)/);
+    const response = await get(asset);
+    expect(response.status).toBe(200);
+    const source = await response.text();
+    if (asset.endsWith(".css")) expect(source).not.toMatch(/@import\b|url\(\s*["']?(?:https?:)?\/\//);
+  }
+});
+
 // The page's colours live in themes.css, so a theme changes colours and never layout or fonts.
 // Reads a stylesheet of the page, without its comments.
 const pageFile = (name: string) =>

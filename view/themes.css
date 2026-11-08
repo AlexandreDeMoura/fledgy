@@ -1,7 +1,7 @@
 /* The colours of the web view. A theme changes colours only: layout and fonts stay in view.css,
    which names no colour of its own.
 
-   Blue marks what is selected, green what passed, red what failed, amber what could not be
+   Neutral fills mark what is selected, green what passed, red what failed, amber what could not be
    performed, what changed and what is wrong.
 
    Dark is the default theme. Another theme, like light below, is a block that sets every colour
@@ -16,25 +16,25 @@
   color-scheme: dark;
 
   /* surfaces, from the page up */
-  --bg: #0a0b0d; /* the page */
-  --bg-side: #0b0c0e; /* the sidebar, the code beside a Part */
-  --panel: #0d0f11; /* cards and panels on the page */
-  --panel-current: #0f1216; /* the QA Step being checked */
-  --panel-hover: #111317;
-  --raised: #14171c; /* what opens over the page: search results, a Flow to write */
-  --tip-bg: #1b1f26; /* a term's tooltip */
+  --bg: #212121; /* the page */
+  --bg-side: #171717; /* the sidebar, the code beside a Part */
+  --panel: #262626; /* cards and panels on the page */
+  --panel-current: #292929; /* the QA Step being checked */
+  --panel-hover: #303030;
+  --raised: #2b2b2b; /* what opens over the page: search results, a Flow to write */
+  --tip-bg: #303030; /* a term's tooltip */
   --shadow: rgb(0 0 0 / 0.55);
 
   /* text, strongest first */
-  --ink: #edeef0;
-  --ink2: #c4c8d0;
-  --not-checked: #b4b9c2; /* a QA Step not checked yet */
-  --ink3: #a6acb8;
-  --dim: #8a8f99;
-  --faint: #6b707a;
-  --sep: #3a3e45; /* the slash between Fledgy and the app's name */
-  --on-accent: #0b0c0e; /* text on a blue fill */
-  --selection: oklch(0.5 0.14 262);
+  --ink: #ececec;
+  --ink2: #d4d4d4;
+  --not-checked: #b4b4b4; /* a QA Step not checked yet */
+  --ink3: #ababab;
+  --dim: #999;
+  --faint: #929292;
+  --sep: #555; /* quiet separators */
+  --on-accent: #171717; /* text on a selected Step */
+  --selection: #525252;
   --selection-ink: #fff;
 
   /* ink laid thin over a surface: fills, lines and underlines, faintest first */
@@ -55,64 +55,62 @@
   --underline: rgb(255 255 255 / 0.4);
 
   /* the four colours, and their text on the page */
-  --blue: oklch(0.74 0.13 262);
-  --blue-ink: oklch(0.8 0.1 262);
-  --blue-ink-bright: oklch(0.86 0.08 262);
+  --blue: #dedede;
+  --blue-ink: #d4d4d4;
+  --blue-ink-bright: #fff;
   --green: oklch(0.74 0.12 158);
   --red: oklch(0.72 0.13 25);
   --amber: oklch(0.82 0.12 78);
   --amber-ink-bright: oklch(0.9 0.1 78);
 }
 
-/* Light: a white page beside a lavender-grey sidebar, with an indigo blue. On white, the four
-   colours are darker, and "bright" text is the darker one, so a hover still stands out. */
+/* Light uses a warm grey sidebar and a white reading surface. */
 :root[data-theme="light"] {
   color-scheme: light;
 
   /* surfaces, from the page up */
   --bg: #fff;
-  --bg-side: #eef1f8;
-  --panel: #f6f7fa;
-  --panel-current: #f7f7fe;
-  --panel-hover: #f0f2f7;
+  --bg-side: #f9f9f9;
+  --panel: #f7f7f7;
+  --panel-current: #f5f5f5;
+  --panel-hover: #f0f0f0;
   --raised: #fff;
   --tip-bg: #fff;
-  --shadow: rgb(15 23 42 / 0.14);
+  --shadow: rgb(0 0 0 / 0.14);
 
   /* text, strongest first */
-  --ink: #111827;
-  --ink2: #374151;
-  --not-checked: #4b5563;
-  --ink3: #555c6b;
-  --dim: #6b7280;
-  --faint: #9ca3af;
-  --sep: #c3c7d0;
+  --ink: #202020;
+  --ink2: #444;
+  --not-checked: #626262;
+  --ink3: #666;
+  --dim: #707070;
+  --faint: #777;
+  --sep: #c7c7c7;
   --on-accent: #fff;
-  --selection: oklch(0.88 0.06 277);
-  --selection-ink: #111827;
+  --selection: #dedede;
+  --selection-ink: #202020;
 
-  /* ink laid thin over a surface: fills, lines and underlines, faintest first.
-     What is selected or active takes a touch of indigo, so it reads as lavender. */
-  --hover-soft: rgb(15 23 42 / 0.025);
-  --hover: rgb(15 23 42 / 0.04);
-  --well: rgb(15 23 42 / 0.045);
-  --active: rgb(67 56 202 / 0.08);
-  --selected: rgb(67 56 202 / 0.1);
-  --line-faint: rgb(15 23 42 / 0.06);
-  --line: rgb(15 23 42 / 0.09);
-  --border-soft: rgb(15 23 42 / 0.1);
-  --border: rgb(15 23 42 / 0.12);
-  --border-strong: rgb(15 23 42 / 0.15);
-  --border-ring: rgb(15 23 42 / 0.28);
-  --border-bold: rgb(15 23 42 / 0.32);
-  --scrollbar: rgb(15 23 42 / 0.2);
-  --underline-soft: rgb(15 23 42 / 0.25);
-  --underline: rgb(15 23 42 / 0.4);
+  /* neutral fills, lines and underlines */
+  --hover-soft: rgb(0 0 0 / 0.025);
+  --hover: rgb(0 0 0 / 0.04);
+  --well: rgb(0 0 0 / 0.045);
+  --active: rgb(0 0 0 / 0.06);
+  --selected: rgb(0 0 0 / 0.08);
+  --line-faint: rgb(0 0 0 / 0.06);
+  --line: rgb(0 0 0 / 0.09);
+  --border-soft: rgb(0 0 0 / 0.1);
+  --border: rgb(0 0 0 / 0.12);
+  --border-strong: rgb(0 0 0 / 0.15);
+  --border-ring: rgb(0 0 0 / 0.28);
+  --border-bold: rgb(0 0 0 / 0.32);
+  --scrollbar: rgb(0 0 0 / 0.2);
+  --underline-soft: rgb(0 0 0 / 0.25);
+  --underline: rgb(0 0 0 / 0.4);
 
   /* the four colours, and their text on the page */
-  --blue: oklch(0.51 0.24 277);
-  --blue-ink: oklch(0.5 0.23 277);
-  --blue-ink-bright: oklch(0.42 0.21 277);
+  --blue: #303030;
+  --blue-ink: #444;
+  --blue-ink-bright: #171717;
   --green: oklch(0.5 0.11 162);
   --red: oklch(0.53 0.19 27);
   --amber: oklch(0.55 0.12 65);

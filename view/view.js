@@ -1,18 +1,17 @@
 // The web view of the knowledge base. It is read-only but for one thing: on a Flow's page the
 // Builder records a QA Result on each QA Step, one of four states and a note.
-// A sidebar is always in view: a search, the Overview and the Changes, then every Area with its
+// A collapsible sidebar holds a search, the Overview and the Changes, then every Area with its
 // Flows and its Flows to write. A Flow to write opens in a popover that says how to write it.
-// A page per Flow: its facts, then two tabs. "Read the Flow" lists the paths on the left and the
-// Steps of the chosen one on the right, each with its Parts, one of which can be opened to show
+// A page per Flow: its facts, then two tabs and a path picker. "Read the Flow" lists the
+// Steps of the chosen path, each with its Parts, one of which can be opened to show
 // where it lives in the code. "Check by hand" holds the path's Manual QA Check: a row per QA Step,
 // the current one open to record its result, by click or by key, and move on to the next.
 // The Overview says how many Flows are written and how many wait to be, which Flows changed since the
 // last commit and in it, and which Flows to write to start with. The Changes is a timeline, newest
 // first, of the Flows not committed and of those each of the last commits changed, with the QA Results
 // recorded before each change.
-// Every term on screen is underlined, and hovering or focusing it shows its sentence from the guide.
-// Everything on screen but the theme, the Areas folded in the sidebar and the commits unfolded on the Changes is
-// addressed by the URL, so any state can be reloaded or shared.
+// Hovering or focusing a term shows its sentence from the guide.
+// The current Flow, path, Step and tab are addressed by the URL, so they can be reloaded or shared.
 
 let DATA;
 let READ_AT = 0; // when the knowledge base was last read
@@ -157,8 +156,6 @@ function tally(fid, P) {
   for (const p of P) for (const qs of p.qa.steps) (t[result(fid, p, qs).state]++, t.all++);
   return t;
 }
-// One square per QA Step of a path, in the colour of its result.
-const squares = (fid, p) => `<span class="d-sq">${p.qa.steps.map((qs) => `<i class="s-${result(fid, p, qs).state}"></i>`).join('')}</span>`;
 const moved = (r) => r.since && (r.since.commits.length || r.since.uncommitted);
 // The state of a whole Flow, as its dot in the sidebar says it: what failed first, then what to check again.
 function flowState(fid) {
@@ -231,6 +228,10 @@ function firstUse(pid) {
 
 const EXPANDED = new Map(); // Area id → whether the Builder unfolded it
 const TWOPEN = new Map(); // Area id → whether the Builder unfolded its Flows to write
+const narrowScreen = matchMedia('(max-width: 760px)');
+let SIDE_OPEN = !narrowScreen.matches;
+const icon = (d) => `<svg viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
+const sidebarToggle = () => `<button class="d-iconbtn" data-sidebar-toggle aria-controls="sidebar" aria-expanded="${SIDE_OPEN}" aria-label="${SIDE_OPEN ? 'Close sidebar' : 'Open sidebar'}" title="${SIDE_OPEN ? 'Close sidebar' : 'Open sidebar'}">${icon('<rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M6 2.5v11"/>')}</button>`;
 
 let SEARCH = '';
 let SEARCH_AT = 0; // the result Enter opens
@@ -289,13 +290,12 @@ function sidebar(fid) {
   const uncommitted = Object.keys(DATA.flows).filter((id) => changes(id).uncommitted).length;
   const page = fid ? 'flow' : q('page') === 'changes' ? 'changes' : 'overview';
   const areas = areaList();
-  const icon = (d) => `<svg viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
 
   const flowRow = (id) => {
     const [state, why] = flowState(id);
-    return `<a class="d-sflow ${id === fid ? 'on' : ''}" href="${esc(flowHref(id))}">
+    return `<a class="d-sflow ${id === fid ? 'on' : ''}" ${id === fid ? 'aria-current="page"' : ''} href="${esc(flowHref(id))}" title="${esc(DATA.flows[id].name)}">
       <i class="d-sdot ${state}" title="${esc(why)}"></i><span class="d-sfname">${esc(DATA.flows[id].name)}</span>
-      ${changes(id).uncommitted ? `<span class="d-stag amber">${term('uncommitted', 'not committed', true)}</span>` : ''}
+      ${changes(id).uncommitted ? '<span class="d-stag amber" title="Not committed" aria-label="Not committed">•</span>' : ''}
     </a>`;
   };
   const toWriteBlock = (a) => {
@@ -323,29 +323,29 @@ function sidebar(fid) {
       <button class="d-sareah" data-area="${esc(a.id)}" aria-expanded="${open}">
         <span class="d-chev ${open ? 'open' : ''}">›</span>
         <span class="d-saname ${a.known ? '' : 'd-warn'}" ${a.known ? '' : `title="${a.id ? 'This Area is not in areas.yaml' : 'These Flows name no Area'}"`}>${esc(areaName(a.id))}</span>
-        <span class="d-scount">${a.flows.length}${a.toWrite.length ? ` · ${a.toWrite.length} to write` : ''}</span>
+        <span class="d-scount">${a.flows.length}</span>
       </button>
       ${open ? `<div class="d-sflows">${a.flows.map(flowRow).join('')}${toWriteBlock(a)}${a.flows.length || a.toWrite.length ? '' : '<div class="d-snone">No Flow yet.</div>'}</div>` : ''}
     </div>`;
   };
 
-  return `<aside class="d-side" data-pane="side" data-key="side">
-    <div class="d-brand"><a class="d-logo" href="/"><i></i>Fledgy</a><span class="d-sl">/</span><span class="d-repo">${esc(DATA.repo.name)}</span></div>
+  return `<aside id="sidebar" class="d-side" aria-label="Knowledge base" ${SIDE_OPEN ? '' : 'inert'}>
+    <div class="d-brand"><a class="d-logo" href="/"><i></i>Fledgy</a>${sidebarToggle()}</div>
     <div class="d-search">
       <label class="d-sbox">${icon('<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>')}
         <input data-search placeholder="Search Flows, Parts…" value="${esc(SEARCH)}" autocomplete="off" spellcheck="false" aria-label="Search Flows, Flows to write and Parts" />
         <kbd>⌘K</kbd></label>
       ${searchList()}
     </div>
-    <nav class="d-snav">
-      <a class="d-snavi ${page === 'overview' ? 'on' : ''}" href="/">${icon('<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>')}Overview</a>
-      <a class="d-snavi ${page === 'changes' ? 'on' : ''}" href="/?page=changes">${icon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="6.5" r="1.5"/><path d="M4.5 5v6M11.5 8c0 2-2 2.5-5 3.5"/>')}Changes${
+    <nav class="d-snav" aria-label="Pages">
+      <a class="d-snavi ${page === 'overview' ? 'on' : ''}" ${page === 'overview' ? 'aria-current="page"' : ''} href="/">${icon('<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>')}Overview</a>
+      <a class="d-snavi ${page === 'changes' ? 'on' : ''}" ${page === 'changes' ? 'aria-current="page"' : ''} href="/?page=changes">${icon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="6.5" r="1.5"/><path d="M4.5 5v6M11.5 8c0 2-2 2.5-5 3.5"/>')}Changes${
         uncommitted ? `<span class="d-badge" title="${plural(uncommitted, 'Flow')} not committed">${uncommitted}</span>` : ''
       }</a>
     </nav>
     <div class="d-lab d-slab">${term('area', 'Areas')}</div>
-    <div class="d-sareas">${areas.length ? areas.map(area).join('') : '<div class="d-snone">Nothing mapped yet.</div>'}</div>
-    <div class="d-sfoot"><div><i class="d-dot"></i>${term('live', 'Live from knowledge-base/')}</div><div class="d-mono dim" data-read>${readAgo()}</div>${themeSwitch(icon)}</div>
+    <nav class="d-sareas" aria-label="Areas and Flows" data-pane="side" data-key="side">${areas.length ? areas.map(area).join('') : '<div class="d-snone">Nothing mapped yet.</div>'}</nav>
+    <div class="d-sfoot"><div><i class="d-dot"></i>${term('live', 'Knowledge base')}<span class="dim" data-read>${readAgo()}</span></div>${themeSwitch(icon)}</div>
   </aside>`;
 }
 
@@ -465,13 +465,14 @@ function overview() {
 
   return `<div class="d-over" data-pane="overview" data-key="overview">
     <div class="d-ocol">
-      <div class="d-lab d-oeyebrow">${esc(DATA.repo.name)} · Knowledge base</div>
-      <h1 class="d-ohead1">${head.join('')}</h1>
+      <div class="d-lab d-oeyebrow">Your app, in plain words</div>
+      <h1 class="d-ohead1">${esc(DATA.repo.name)}</h1>
+      <div class="d-osummary">${head.join('')}</div>
       ${body}
-      <div class="d-owords">
-        <p>Not sure what a word means? The guide explains each one in more depth.</p>
+      <details class="d-owords">
+        <summary>Get to know the words</summary>
         <div class="d-opills">${GUIDE_WORDS.map(([id, label]) => `<a class="d-opill" href="${GUIDE}#${id}" target="_blank" rel="noopener">${label}</a>`).join('')}<a class="d-link d-oguide" href="${GUIDE}" target="_blank" rel="noopener">Whole guide ↗</a></div>
-      </div>
+      </details>
     </div>
   </div>`;
 }
@@ -671,30 +672,73 @@ function stepRow(fid, P, p, s, i, cur) {
   </div>`;
 }
 
-// The paths of the Flow, each a card: on "Read the Flow" its Steps, on "Check by hand" its results.
-function pathCard(fid, P, x, p, check) {
-  const t = tally(fid, [x]);
-  const own = x.steps.filter((s) => !s.shared).length;
-  const badge = t.failed
-    ? `<span class="d-pbadge failed">${t.failed} failed</span>`
-    : `<span class="d-pbadge ${t.all && t.passed === t.all ? 'passed' : ''}">${t.passed}/${t.all}</span>`;
-  const summary = t.failed
-    ? `<span class="d-st s-failed">${t.failed} failed</span>`
-    : t.all && t.passed === t.all
-      ? '<span class="d-st s-passed">all passed</span>'
-      : t['not-checked'] === t.all
-        ? 'not started'
-        : `${t.passed}/${t.all} passed`;
-  const sub = check
-    ? `<span class="d-pcheck">${squares(fid, x)}${summary}</span>`
-    : x.id === 'main'
-      ? `<span class="d-psub">${plural(x.steps.length, 'step')} · ${esc(x.outcome)}</span>`
-      : `<span class="d-pmeta">${x.divergesAt == null ? '<span class="d-warn">leaves at a step the main path does not have</span>' : `leaves at step ${x.divergesAt + 1}`} · ${plural(own, 'step')}</span>`;
-  return `<button class="d-pcard ${x.id === p.id ? 'on' : ''}" ${set({ path: x.id === 'main' ? null : x.id, step: null, part: null, qa: null })}>
-    <span class="d-ptitle"><span>${x.id === 'main' ? term('mainpath', esc(x.name), true) : esc(x.name)}</span>${check ? '' : badge}</span>
-    ${sub}
-  </button>`;
+// A disclosure keeps paths compact, with the Variant's condition visible when choosing one.
+const pathIcon = (main) => icon(main
+  ? '<circle cx="8" cy="3" r="1.5"/><path d="M8 4.5v7M5.5 9.5 8 12l2.5-2.5"/>'
+  : '<path d="M4 2v12M4 6c0 3 7 1 7 5M8.5 8.5 11 11l2.5-2.5"/>');
+function pathPicker(fid, P, p, check) {
+  const t = tally(fid, [p]);
+  const option = (x) => {
+    const results = tally(fid, [x]);
+    const selected = x.id === p.id;
+    const detail = x.id === 'main' ? x.outcome : x.when;
+    const stats = check
+      ? `${results.passed}/${results.all} passed${results.failed ? ` · ${results.failed} failed` : ''}`
+      : `${plural(x.steps.length, 'Step')}${x.id !== 'main' && x.divergesAt != null ? ` · leaves at Step ${x.divergesAt + 1}` : ''}`;
+    return `<button class="d-pathoption ${selected ? 'on' : ''}" data-path-pick="${esc(x.id)}" aria-pressed="${selected}">
+      <span class="d-pathicon">${pathIcon(x.id === 'main')}</span>
+      <span class="d-pathcopy"><span class="d-pathname">${esc(x.name)}</span>${detail ? `<span class="d-pathdesc">${esc(detail)}</span>` : ''}<span class="d-pathstats ${check && results.failed ? 's-failed' : ''}">${esc(stats)}</span></span>
+      <span class="d-pathcheck" aria-hidden="true">${selected ? icon('<path d="m3 8 3 3 7-7"/>') : ''}</span>
+    </button>`;
+  };
+  const meta = check
+    ? `${t.passed} of ${t.all} QA Steps passed`
+    : `${plural(p.steps.length, 'Step')}${p.id !== 'main' && p.divergesAt != null ? ` · leaves at Step ${p.divergesAt + 1}` : ''}`;
+  return `<div class="d-pathbar"><details class="d-pathpicker">
+    <summary class="d-pathtrigger" aria-label="Choose a path. Current: ${esc(p.name)}">
+      <span class="d-pathicon">${pathIcon(p.id === 'main')}</span>
+      <span class="d-pathcopy"><span class="d-pathkind">${p.id === 'main' ? 'Main path' : 'Variant'}</span><span class="d-pathname">${p.id === 'main' ? 'Follow the main path' : esc(p.name)}</span></span>
+      ${P.length > 1 ? `<span class="d-pathcount">${plural(P.length - 1, 'Variant')}</span>` : ''}
+      <span class="d-pathchevron">${icon('<path d="m4.5 6.5 3.5 3.5 3.5-3.5"/>')}</span>
+    </summary>
+    <div class="d-pathmenu" role="group" aria-label="Choose a path">
+      <div class="d-pathheading">Main path</div>${option(P[0])}
+      ${P.length > 1 ? `<div class="d-pathheading d-pathvariants">Variants<span>${P.length - 1}</span></div>${P.slice(1).map(option).join('')}` : ''}
+    </div>
+  </details><span class="dim">${meta}</span></div>`;
 }
+
+function closePathPicker(focus = false) {
+  const picker = document.querySelector('.d-pathpicker[open]');
+  if (!picker) return;
+  picker.open = false;
+  if (focus) picker.querySelector('summary').focus({ preventScroll: true });
+}
+
+// Keep the menu inside the window, even when the Flow is scrolled or the window is short.
+function placePathMenu() {
+  const picker = document.querySelector('.d-pathpicker[open]');
+  if (!picker) return;
+  const menu = picker.querySelector('.d-pathmenu');
+  const r = picker.querySelector('summary').getBoundingClientRect();
+  const below = innerHeight - r.bottom - 16;
+  const above = r.top - 16;
+  const upwards = below < Math.min(menu.scrollHeight, 360) && above > below;
+  menu.style.maxHeight = `${Math.max(0, Math.min(440, upwards ? above : below))}px`;
+  menu.style.left = `${Math.max(12, Math.min(r.left, innerWidth - menu.offsetWidth - 12))}px`;
+  menu.style.top = `${upwards ? r.top - menu.offsetHeight - 8 : r.bottom + 8}px`;
+}
+
+document.addEventListener('toggle', (e) => {
+  if (e.target.matches?.('.d-pathpicker') && e.target.open) placePathMenu();
+}, true);
+document.addEventListener('scroll', (e) => {
+  if (!e.target.closest?.('.d-pathmenu')) closePathPicker();
+}, true);
+document.addEventListener('focusin', (e) => {
+  if (!e.target.closest?.('.d-pathpicker')) closePathPicker();
+});
+addEventListener('resize', placePathMenu);
 
 // What has happened to the Flow since the results on this path were recorded: the result with the most to say.
 // A change never clears a result: the Builder is told, and decides whether to reset.
@@ -871,27 +915,24 @@ function flowPage(fid) {
   const at = order.indexOf(fid);
   const [prev, next] = [order[at - 1], order[at + 1]];
   const navBtn = (id, label) =>
-    id ? `<a class="d-btn2" href="${esc(flowHref(id))}" title="${esc(DATA.flows[id].name)}">${label}</a>` : `<span class="d-btn2 off">${label}</span>`;
-  const t = tally(fid, P);
-  const variants = P.slice(1);
-
-  return `<div class="d-flow">
+    id ? `<a class="d-btn2" href="${esc(flowHref(id))}" title="${esc(DATA.flows[id].name)}" aria-label="${esc(label === '←' ? 'Previous Flow: ' : 'Next Flow: ')}${esc(DATA.flows[id].name)}">${label}</a>` : `<span class="d-btn2 off">${label}</span>`;
+  return `<div class="d-flow" data-pane="flow" data-key="${esc(`${fid}|${p.id}|${check}`)}"><div class="d-flowcol">
     <div class="d-fhead">
       <div class="d-ftitle">
         <div class="d-fcrumb">${esc(areaName(areaOf(fid)))}</div>
         <h1 class="d-h1">${esc(f.name)}</h1>
         <div class="d-lead">${esc(f.goal)}</div>
       </div>
-      <div class="d-fnav">${navBtn(prev, `← ${prev ? esc(DATA.flows[prev].name) : 'Previous'}`)}${navBtn(next, `${next ? esc(DATA.flows[next].name) : 'Next'} →`)}</div>
+      <div class="d-fnav">${navBtn(prev, '←')}${navBtn(next, '→')}</div>
     </div>
     <div class="d-facts">
       <div class="d-fact"><div class="d-lab">${term('actor', 'Actor')}</div><div class="d-clamp" ${actor?.is ? `title="${esc(actor.is)}"` : ''}><b>${esc(actorName(f))}</b>${actor?.is ? `<span class="dim"> · ${esc(actor.is)}</span>` : ''}</div></div>
       <div class="d-fact"><div class="d-lab">${term('trigger', 'Trigger')}</div><div>${esc(f.trigger)}</div></div>
       <div class="d-fact"><div class="d-lab">Before it starts</div>${(f.preconditions ?? []).map(precondition).join('') || '<div class="d-none">Nothing.</div>'}</div>
     </div>
-    <div class="d-tabs" role="tablist">
-      <button class="d-tab ${check ? '' : 'on'}" role="tab" aria-selected="${!check}" ${set({ tab: null })}>Read the Flow<kbd>R</kbd></button>
-      <button class="d-tab ${check ? 'on' : ''}" role="tab" aria-selected="${check}" ${set({ tab: 'check' })}>Check by hand${squares(fid, p)}<kbd>C</kbd></button>
+    <div class="d-tabs" role="tablist" aria-label="Flow view">
+      <button class="d-tab ${check ? '' : 'on'}" id="read-tab" role="tab" aria-controls="flow-content" aria-selected="${!check}" tabindex="${check ? -1 : 0}" ${set({ tab: null })}>Read the Flow<kbd>R</kbd></button>
+      <button class="d-tab ${check ? 'on' : ''}" id="check-tab" role="tab" aria-controls="flow-content" aria-selected="${check}" tabindex="${check ? 0 : -1}" ${set({ tab: 'check' })}>Check by hand<kbd>C</kbd></button>
       <span class="d-tabr">${
         check
           ? `<span ${DATA.resultsFile ? `title="${esc(DATA.resultsFile)}"` : ''}>Results stay on this machine, outside the repo</span>`
@@ -900,20 +941,9 @@ function flowPage(fid) {
             }`
       }</span>
     </div>
+    ${pathPicker(fid, P, p, check)}
     <div class="d-fbody">
-      <div class="d-pathcol" data-pane="paths" data-key="${esc(fid)}">
-        ${pathCard(fid, P, P[0], p, check)}
-        ${variants.length ? `<div class="d-lab d-vlab">${term('variant', 'Variants')} · ${variants.length}</div>${variants.map((x) => pathCard(fid, P, x, p, check)).join('')}` : ''}
-        ${
-          check
-            ? `<div class="d-pfoot">This Flow · ${[['passed', 'passed'], ['failed', 'failed'], ['could-not-perform', 'could not perform'], ['not-checked', 'not checked']]
-                .filter(([k]) => t[k])
-                .map(([k, label]) => `${t[k]} ${label}`)
-                .join(' · ')}</div>`
-            : ''
-        }
-      </div>
-      <div class="d-content ${check ? 'check' : ''}" data-pane="content" data-key="${esc(`${fid}|${p.id}|${check}`)}">
+      <div class="d-content ${check ? 'check' : ''}" id="flow-content" role="tabpanel" tabindex="0" aria-labelledby="${check ? 'check-tab' : 'read-tab'}">
         ${
           check
             ? checkByHand(fid, P, p)
@@ -923,7 +953,7 @@ function flowPage(fid) {
         }
       </div>
     </div>
-  </div>`;
+  </div></div>`;
 }
 
 // ---------- wiring ----------
@@ -941,7 +971,10 @@ function render() {
   const fid = DATA.flows[q('flow')] ? q('flow') : null;
   document.title = fid ? `${DATA.flows[fid].name} · Fledgy` : q('page') === 'changes' ? `Changes · Fledgy · ${DATA.repo.name}` : `Fledgy · ${DATA.repo.name}`;
   hideTip();
-  app.innerHTML = `<div class="d-shell">${sidebar(fid)}<main class="d-main">${fid ? flowPage(fid) : q('page') === 'changes' ? changesPage() : overview()}</main></div>${twPopover()}`;
+  app.innerHTML = `<div class="d-shell ${SIDE_OPEN ? '' : 'is-collapsed'}">${sidebar(fid)}
+    <button class="d-backdrop" data-sidebar-toggle aria-label="Close sidebar" tabindex="-1"></button>
+    <main class="d-main" ${SIDE_OPEN && narrowScreen.matches ? 'inert' : ''}><header class="d-toolbar">${sidebarToggle()}<span class="d-repo">${esc(DATA.repo.name)}</span><span class="d-toolbar-page">${fid ? 'Flow' : q('page') === 'changes' ? 'Changes' : 'Overview'}</span><a href="${GUIDE}" target="_blank" rel="noopener" class="d-help">Guide ↗</a></header>
+    ${fid ? flowPage(fid) : q('page') === 'changes' ? changesPage() : overview()}</main></div>${twPopover()}`;
   for (const el of document.querySelectorAll('[data-pane]')) if (kept[el.dataset.pane]?.key === el.dataset.key) el.scrollTop = kept[el.dataset.pane].top;
   if (searching) {
     const input = app.querySelector('[data-search]');
@@ -970,7 +1003,33 @@ function openToWrite(id) {
   setQ({ tw: q('tw') === id ? null : id });
 }
 
+function toggleSidebar() {
+  SIDE_OPEN = !SIDE_OPEN;
+  const shell = document.querySelector('.d-shell');
+  shell?.classList.toggle('is-collapsed', !SIDE_OPEN);
+  const side = document.querySelector('.d-side');
+  if (side) side.inert = !SIDE_OPEN;
+  const main = document.querySelector('.d-main');
+  if (main) main.inert = SIDE_OPEN && narrowScreen.matches;
+  for (const button of document.querySelectorAll('.d-iconbtn[data-sidebar-toggle]')) {
+    button.setAttribute('aria-expanded', String(SIDE_OPEN));
+    button.setAttribute('aria-label', SIDE_OPEN ? 'Close sidebar' : 'Open sidebar');
+    button.title = SIDE_OPEN ? 'Close sidebar' : 'Open sidebar';
+  }
+  // Keep focus on a visible control when the sidebar closes, or enter it when it opens.
+  document.querySelector(SIDE_OPEN ? '[data-search]' : '.d-toolbar [data-sidebar-toggle]')?.focus();
+  placePopover();
+}
+
 document.addEventListener('click', async (e) => {
+  if (!e.target.closest('.d-pathpicker')) closePathPicker();
+  const pathChoice = e.target.closest('[data-path-pick]');
+  if (pathChoice) {
+    setQ({ path: pathChoice.dataset.pathPick === 'main' ? null : pathChoice.dataset.pathPick, step: null, part: null, qa: null });
+    document.querySelector('.d-pathtrigger')?.focus({ preventScroll: true });
+    return;
+  }
+  if (e.target.closest('[data-sidebar-toggle]')) return toggleSidebar();
   // A click outside the popover closes it, and one outside the search closes its results.
   if (q('tw') && !e.target.closest('.d-pop, [data-tw]')) setQ({ tw: null });
   if (SEARCH && !e.target.closest('.d-search')) {
@@ -981,6 +1040,7 @@ document.addEventListener('click', async (e) => {
   if (a && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
     e.preventDefault();
     if (a.matches('[data-found]')) clearSearch();
+    if (SIDE_OPEN && narrowScreen.matches) toggleSidebar();
     return go(a.getAttribute('href'));
   }
   const t = e.target.closest('[data-set],[data-result],[data-reset],[data-area],[data-twlist],[data-tw],[data-copy],[data-fold],[data-theme-pick]');
@@ -1007,7 +1067,10 @@ document.addEventListener('click', async (e) => {
     const done = () => (t.textContent = 'Copied');
     return navigator.clipboard?.writeText(t.dataset.copy).then(done, () => (t.textContent = 'Select and copy it'));
   }
-  if (t.dataset.set) setQ(JSON.parse(t.dataset.set));
+  if (t.dataset.set) {
+    setQ(JSON.parse(t.dataset.set));
+    if (t.matches('[role="tab"]')) document.querySelector('.d-tab.on')?.focus({ preventScroll: true });
+  }
   if (t.dataset.reset) await post('/api/result-reset', JSON.parse(t.dataset.reset));
   else if (t.dataset.result) {
     // The note is read from the page: a click on a state can land before the note's own change is saved.
@@ -1035,9 +1098,41 @@ document.addEventListener('input', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
+  const picker = e.target.closest?.('.d-pathpicker');
+  if (picker && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (e.key === 'Escape' && picker.open) {
+      e.preventDefault();
+      closePathPicker(true);
+      return;
+    }
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault();
+      const wasOpen = picker.open;
+      picker.open = true;
+      placePathMenu();
+      const choices = [...picker.querySelectorAll('[data-path-pick]')];
+      const at = choices.indexOf(document.activeElement);
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? choices.length - 1
+        : !wasOpen || at < 0 ? (e.key === 'ArrowUp' ? choices.length - 1 : 0)
+        : (at + (e.key === 'ArrowDown' ? 1 : -1) + choices.length) % choices.length;
+      choices[next]?.focus({ preventScroll: true });
+      choices[next]?.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    // Typing while choosing a path must not trigger the Flow's QA shortcuts.
+    return;
+  }
+  if (e.target.matches?.('[role="tab"]') && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+    e.preventDefault();
+    const check = e.key === 'End' || (e.key !== 'Home' && q('tab') !== 'check');
+    setQ({ tab: check ? 'check' : null });
+    document.querySelector('.d-tab.on')?.focus({ preventScroll: true });
+    return;
+  }
   const search = document.querySelector('[data-search]');
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
+    if (!SIDE_OPEN) toggleSidebar();
     search?.focus();
     search?.select();
     return;
@@ -1065,6 +1160,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     hideTip();
     if (q('tw')) setQ({ tw: null });
+    else if (SIDE_OPEN && narrowScreen.matches) toggleSidebar();
     return;
   }
   // The keys of the Flow page, unless a note is being typed.
@@ -1097,6 +1193,11 @@ document.addEventListener('keydown', (e) => {
   }
 });
 addEventListener('resize', placePopover);
+narrowScreen.addEventListener('change', () => {
+  const main = document.querySelector('.d-main');
+  if (main) main.inert = SIDE_OPEN && narrowScreen.matches;
+  if (main?.inert && main.contains(document.activeElement)) document.querySelector('[data-search]')?.focus();
+});
 
 // Read again on load and whenever the window comes back to the front, so an edit, a stage or a commit made elsewhere shows.
 // A note being typed is left alone: redrawing would throw away what is not saved yet.
